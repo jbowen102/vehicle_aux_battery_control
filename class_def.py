@@ -39,6 +39,12 @@ class Vehicle(object):
         # If manual switch opened, main system voltage sensing disabled.
         return self.StarterBatt.get_voltage() > 1
 
+    def get_main_voltage(self):
+        return self.StarterBatt.get_voltage()
+
+    def get_aux_voltage(self):
+        return self.AuxBatt.get_voltage()
+
 
 class Battery(object):
     def __init__(self, voltage_sensing_pin):
@@ -66,7 +72,7 @@ class BatteryCharger(object):
     def _enable_charge(self):
         assert not self.is_charging(), "Tried to enable charging when already charging"
         ah.relay[CHARGER_ENABLE_RELAY].on()
-        time.sleep(0.2)
+        time.sleep(1)
         assert ah.relay[CHARGER_ENABLE_RELAY].is_on()
 
     def disable_charge(self):
@@ -76,27 +82,33 @@ class BatteryCharger(object):
             # Allow system voltage to settle
         assert ah.relay[CHARGER_ENABLE_RELAY].is_off()
 
+    def is_charge_direction_fwd(self):
+        return ah.relay[CHARGER_DIRECTION_RELAY].is_on()
+
+    def is_charge_direction_rev(self):
+        return not ah.relay[CHARGER_DIRECTION_RELAY].is_on()
+
     def set_charge_direction_fwd(self):
         # Charge main battery with aux battery
-        self.disable_charge()
-        ah.relay[CHARGER_DIRECTION_RELAY].on()
-        time.sleep(0.2)
+        if self.is_charge_direction_rev():
+            self.disable_charge()
+            ah.relay[CHARGER_DIRECTION_RELAY].on()
+            time.sleep(0.5)
         assert ah.relay[CHARGER_DIRECTION_RELAY].is_on()
 
     def set_charge_direction_rev(self):
         # Charge aux battery with alternator
-        self.disable_charge()
-        ah.relay[CHARGER_DIRECTION_RELAY].off()
-        time.sleep(0.2)
+        if self.is_charge_direction_fwd():
+            self.disable_charge()
+            ah.relay[CHARGER_DIRECTION_RELAY].off()
+            time.sleep(0.5)
         assert ah.relay[CHARGER_DIRECTION_RELAY].is_off()
 
     def charge_starter_batt(self):
-        self.disable_charge()
         self.set_charge_direction_fwd()
         self._enable_charge()
 
     def charge_aux_batt(self):
-        self.disable_charge()
         self.set_charge_direction_rev()
         self._enable_charge()
 
