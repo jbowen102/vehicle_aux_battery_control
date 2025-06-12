@@ -25,6 +25,7 @@ class Vehicle(object):
     def __init__(self, StarterBattery, AuxBattery, BatteryCharger):
         self.StarterBatt = StarterBattery
         self.AuxBatt = AuxBattery
+        self.BattCharger = BatteryCharger
 
     def is_acc_powered(self):
         return ah.input[KEY_ACC_INPUT_PIN].read()
@@ -44,6 +45,21 @@ class Vehicle(object):
 
     def get_aux_voltage(self):
         return self.AuxBatt.get_voltage()
+
+    def charge_starter_batt(self):
+        self.BattCharger.set_charge_direction_fwd()
+        self.BattCharger.enable_charge()
+
+    def charge_aux_batt(self):
+        self.BattCharger.set_charge_direction_rev()
+        self.BattCharger.enable_charge()
+
+    def stop_charging(self):
+        self.BattCharger.disable_charge()
+
+    def keep_controller_on(self):
+        # To keep system awake, have to charge starter batt as well.
+        self.BattCharger.charge_starter_batt()
 
 
 class Battery(object):
@@ -69,7 +85,7 @@ class BatteryCharger(object):
     def is_charging(self):
         return ah.relay[CHARGER_ENABLE_RELAY].is_on()
 
-    def _enable_charge(self):
+    def enable_charge(self):
         assert not self.is_charging(), "Tried to enable charging when already charging"
         ah.relay[CHARGER_ENABLE_RELAY].on()
         time.sleep(1)
@@ -103,12 +119,4 @@ class BatteryCharger(object):
             ah.relay[CHARGER_DIRECTION_RELAY].off()
             time.sleep(0.5)
         assert ah.relay[CHARGER_DIRECTION_RELAY].is_off()
-
-    def charge_starter_batt(self):
-        self.set_charge_direction_fwd()
-        self._enable_charge()
-
-    def charge_aux_batt(self):
-        self.set_charge_direction_rev()
-        self._enable_charge()
 
