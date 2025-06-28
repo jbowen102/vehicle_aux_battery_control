@@ -1,4 +1,5 @@
 import time
+import subprocess
 # from datetime import datetime, timedelta
 # from colorama import Style, Fore, Back
 # import multiprocessing as mp
@@ -33,6 +34,9 @@ class Vehicle(object):
     def is_key_on(self):
         return ah.input[KEY_ON_INPUT_PIN].read()
 
+    def is_key_off(self):
+        return not self.is_acc_powered()
+
     def is_engine_running(self):
         return self.StarterBatt.get_voltage() >= ALTERNATOR_OUTPUT_V_MIN
 
@@ -57,9 +61,13 @@ class Vehicle(object):
     def stop_charging(self):
         self.BattCharger.disable_charge()
 
+    def shut_down_controller(self):
+        subprocess.run(["sudo", "shutdown", "-P", "--now"],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
     def keep_controller_on(self):
         # To keep system awake, have to charge starter batt as well.
-        self.BattCharger.charge_starter_batt()
+        self.charge_starter_batt()
 
 
 class Battery(object):
@@ -86,9 +94,9 @@ class BatteryCharger(object):
         return ah.relay[CHARGER_ENABLE_RELAY].is_on()
 
     def enable_charge(self):
-        assert not self.is_charging(), "Tried to enable charging when already charging"
-        ah.relay[CHARGER_ENABLE_RELAY].on()
-        time.sleep(1)
+        if not self.is_charging():
+            ah.relay[CHARGER_ENABLE_RELAY].on()
+            time.sleep(1)
         assert ah.relay[CHARGER_ENABLE_RELAY].is_on()
 
     def disable_charge(self):
