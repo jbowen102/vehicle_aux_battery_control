@@ -1,7 +1,7 @@
 import time
 import datetime as dt
 
-from class_def import Vehicle, StarterBatt, AuxBatt, BatteryCharger, Controller
+from class_def import Vehicle
 
 
 STATE_CHANGE_DELAY_SEC = 30
@@ -121,7 +121,7 @@ def main():
                 # function that should continue)
 
                 # RPi power-down at some point
-                Controller.shut_down()
+                Car.shut_down_controller()
 
 
 if __name__ == "__main__":
