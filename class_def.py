@@ -161,14 +161,17 @@ class BatteryCharger(object):
         if not self.is_charging():
             Controller().close_relay(self.charger_enable_relay)
             time.sleep(0.5)
-        assert self.is_charging()
+        assert self.is_charging(), "BatteryCharger.enable_charge() failed to start charging."
 
     def disable_charge(self):
         if self.is_charging():
             Controller().open_relay(self.charger_enable_relay)
             # Allow system voltage to settle
             time.sleep(0.5)
-        assert not self.is_charging()
+            # Also release charge-direction relay to avoid wasting energy through its coil.
+            Controller().open_relay(self.charge_direction_relay)
+        assert not self.is_charging(), "BatteryCharger.disable_charge() failed to stop charging."
+        assert Controller().is_relay_off(self.charge_direction_relay), "BatteryCharger.disable_charge() failed to open charge-direction relay."
 
     def is_charge_direction_fwd(self):
         return Controller().is_relay_on(self.charge_direction_relay)
@@ -182,7 +185,7 @@ class BatteryCharger(object):
             self.disable_charge()
             Controller().close_relay(self.charge_direction_relay)
             time.sleep(0.5)
-        assert self.is_charge_direction_fwd()
+        assert self.is_charge_direction_fwd(), "BatteryCharger.set_charge_direction_fwd() failed to set direction."
 
     def set_charge_direction_rev(self):
         # Charge aux battery with alternator
@@ -190,5 +193,5 @@ class BatteryCharger(object):
             self.disable_charge()
             Controller().open_relay(self.charge_direction_relay)
             time.sleep(0.5)
-        assert self.is_charge_direction_rev()
+        assert self.is_charge_direction_rev(), "BatteryCharger.set_charge_direction_rev() failed to set direction."
 
