@@ -1,3 +1,4 @@
+import time
 import datetime as dt
 
 from class_def import Vehicle, StarterBatt, AuxBatt, BatteryCharger, Controller
@@ -34,7 +35,7 @@ def charge_delay_time_elapsed():
 def main():
     time.sleep(5) # Give time for system to stabilize.
 
-    Car = Vehicle(StarterBatt(), AuxBatt(), BatteryCharger())
+    Car = Vehicle()
 
     key_acc_powered =   Car.is_acc_powered()
     key_on_pos =        Car.is_key_on()

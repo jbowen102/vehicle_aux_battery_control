@@ -20,7 +20,7 @@ KEY_ON_INPUT_PIN = 1            # labeled 2 on board
 ENABLE_SWITCH_DETECT_PIN = 2    # labeled 3 on board
 
 CHARGER_ENABLE_RELAY = 0        # labeled 1 on board
-CHARGER_DIRECTION_RELAY = 1     # labeled 2 on board
+CHARGE_DIRECTION_RELAY = 1     # labeled 2 on board
 KEEPALIVE_RELAY = 2             # labeled 3 on board
 
 
@@ -70,10 +70,16 @@ class Controller(object):
 
 
 class Vehicle(object):
-    def __init__(self, StarterBattery, AuxBattery, BatteryCharger):
-        self.StarterBatt = StarterBattery
-        self.AuxBatt = AuxBattery
-        self.BattCharger = BatteryCharger
+    def __init__(self):
+        self.StarterBatt = StarterBattery(MAIN_BATT_V_MONITORING_PIN)
+        self.AuxBatt = AuxBattery(AUX_BATT_V_MONITORING_PIN)
+        self.BattCharger = BatteryCharger()
+
+        self.key_acc_detect_pin = KEY_ACC_INPUT_PIN
+        self.key_on_detect_pin = KEY_ON_INPUT_PIN
+
+        self.enable_sw_detect_pin = ENABLE_SWITCH_DETECT_PIN
+        self.keepalive_relay_num = KEEPALIVE_RELAY
 
         Controller.close_relay(KEEPALIVE_RELAY) # Keep on whenever device is on.
 
@@ -142,35 +148,36 @@ class AuxBatt(Battery):
 
 class BatteryCharger(object):
     def __init__(self):
-        pass
+        self.charger_enable_relay = CHARGER_ENABLE_RELAY
+        self.charge_direction_relay = CHARGE_DIRECTION_RELAY
 
     def is_charging(self):
-        return Controller.is_relay_on(CHARGER_ENABLE_RELAY)
+        return Controller.is_relay_on(self.charger_enable_relay)
 
     def enable_charge(self):
         if not self.is_charging():
-            Controller.close_relay(CHARGER_ENABLE_RELAY)
+            Controller.close_relay(self.charger_enable_relay)
             time.sleep(0.5)
         assert self.is_charging()
 
     def disable_charge(self):
         if self.is_charging():
-            Controller.open_relay(CHARGER_ENABLE_RELAY)
+            Controller.open_relay(self.charger_enable_relay)
             # Allow system voltage to settle
             time.sleep(0.5)
         assert not self.is_charging()
 
     def is_charge_direction_fwd(self):
-        return Controller.is_relay_on(CHARGER_DIRECTION_RELAY)
+        return Controller.is_relay_on(self.charge_direction_relay)
 
     def is_charge_direction_rev(self):
-        return Controller.is_relay_off(CHARGER_DIRECTION_RELAY)
+        return Controller.is_relay_off(self.charge_direction_relay)
 
     def set_charge_direction_fwd(self):
         # Charge main battery with aux battery
         if self.is_charge_direction_rev():
             self.disable_charge()
-            Controller.close_relay(CHARGER_DIRECTION_RELAY)
+            Controller.close_relay(self.charge_direction_relay)
             time.sleep(0.5)
         assert self.is_charge_direction_fwd()
 
@@ -178,7 +185,7 @@ class BatteryCharger(object):
         # Charge aux battery with alternator
         if self.is_charge_direction_fwd():
             self.disable_charge()
-            Controller.open_relay(CHARGER_DIRECTION_RELAY)
+            Controller.open_relay(self.charge_direction_relay)
             time.sleep(0.5)
         assert self.is_charge_direction_rev()
 
