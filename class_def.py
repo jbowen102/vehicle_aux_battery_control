@@ -103,10 +103,6 @@ class Vehicle(object):
 
         if enable_detect:
             return True
-        elif self.is_acc_powered() or Controller.is_relay_on(KEEPALIVE_RELAY):
-            # ACC power is on or keepalive relay on, so enable switch is powered.
-            # Since enable not detected in this condition, switch must be off.
-            return False
         else:
             return False
 
