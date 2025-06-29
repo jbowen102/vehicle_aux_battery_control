@@ -1,21 +1,12 @@
 import datetime as dt
 
-import class_def
+from class_def import Vehicle, StarterBatt, AuxBatt, BatteryCharger, Controller
 
-
-Car = class_def.Vehicle(class_def.StarterBatt(), class_def.AuxBatt(), class_def.BatteryCharger())
-
-key_acc_powered =   Car.is_acc_powered()
-key_on_pos =        Car.is_key_on()
-engine_on_state =   Car.is_engine_running()
-sys_enabled_state = Car.is_enable_switch_closed()
 
 STATE_CHANGE_DELAY_SEC = 30
 LAST_STATE_CHANGE = None
 
-RPI_POWER_RELAY_DELAY_ON_RELEASE = 100
-RPI_SHUTDOWN_TIME_REQUIRED = 30
-RPI_SHUTDOWN_DELAY = max((RPI_POWER_RELAY_DELAY_ON_RELEASE - RPI_SHUTDOWN_TIME_REQUIRED) - 10, 0)
+RPI_SHUTDOWN_DELAY = 30
 
 
 def start_charge_delay_timer():
@@ -32,24 +23,36 @@ def charge_delay_time_elapsed():
 
     if LAST_STATE_CHANGE is None:
         return True
-    elif (dt.datetime.now() - LAST_STATE_CHANGE) > dt.timedelta(seconds=STATE_CHANGE_DELAY_SEC):
+    elif (dt.datetime.now() - LAST_STATE_CHANGE) >= dt.timedelta(seconds=STATE_CHANGE_DELAY_SEC):
         return True
     else:
         return False
     # https://www.tutorialspoint.com/How-can-we-do-date-and-time-math-in-Python
 
 
+
+time.sleep(5) # Give time for system to stabilize.
+
+Car = Vehicle(StarterBatt(), AuxBatt(), BatteryCharger())
+
+key_acc_powered =   Car.is_acc_powered()
+key_on_pos =        Car.is_key_on()
+engine_on_state =   Car.is_engine_running()
+sys_enabled_state = Car.is_enable_switch_closed()
+
+
 while True:
 
     # Check for enable-switch state change
     if not Car.is_enable_switch_closed() and sys_enabled_state:
+        # Switch opened for the first time.
         sys_enabled_state = False
         # TODO Start system shutdown timer.
         continue
     elif Car.is_enable_switch_closed() and not sys_enabled_state:
         # Enable switch closed (during previous timeout)
         sys_enabled_state = True
-        # TODO Stop shutdown timeout
+        # TODO Stop shutdown timer
         continue
 
 
@@ -57,7 +60,6 @@ while True:
     if Car.is_acc_powered() and not key_acc_powered:
         # Key switched from OFF to ACC
         key_acc_powered = True
-
         Car.stop_charging()
         start_charge_delay_timer()
         continue
@@ -65,6 +67,7 @@ while True:
     elif not Car.is_acc_powered() and key_acc_powered:
         # Key switched from ACC to OFF
         key_acc_powered = False
+        # Okay to continue charging across this transition.
         start_charge_delay_timer()
         continue
 
@@ -110,8 +113,10 @@ while True:
             Car.charge_starter_batt()
         elif Car.is_key_off():
             # Key OFF
-            # TODO Determine if system should keep itself on and charge FLA batt
+            Car.charge_starter_batt()
+            # TODO Determine how long system should keep itself on and charge FLA batt
             # (based on FLA voltage measured after settling or some other
             # function that should continue)
-            # Initiate RPi power-down
-            Car.shut_down_controller()
+
+            # RPi power-down at some point
+            Controller.shut_down()
