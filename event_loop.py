@@ -74,7 +74,6 @@ def main():
             # Engine stopped
             engine_on_state = False
             Car.stop_charging()
-            Timer.start_charge_delay_timer()
             continue
 
 
@@ -82,22 +81,30 @@ def main():
         if Timer.has_charge_delay_time_elapsed():
             if Car.is_engine_running():
                 # Key ON, engine running.
-                Car.charge_aux_batt()
-            elif Car.is_key_on():
-                # Key ON but engine off.
-                Car.charge_starter_batt()
+                if Car.is_aux_batt_full():
+                    Timer.start_charge_delay_timer()
+                else:
+                    Car.charge_aux_batt()
+
             elif Car.is_acc_powered():
-                # Key in ACC
-                Car.charge_starter_batt()
+                # Key in ACC or ON but engine off.
+                if Car.is_aux_batt_sufficient():
+                    Car.charge_starter_batt()
+                else:
+                    # If Li batt V low, power down RPi.
+                    Car.shut_down_controller()
+                    # Will need to be manually turned back on either by key cycle or enable-switch cycle.
+
             elif Car.is_key_off():
                 # Key OFF
-                Car.charge_starter_batt()
-                # TODO Determine how long system should keep itself on and charge FLA batt
-                # (based on FLA voltage measured after settling or some other
-                # function that should continue)
+                if Car.does_starter_batt_need_charge() and Car.is_aux_batt_sufficient():
+                    # Keep charging while FLA batt needs charge and Li batt V sufficient.
+                    Car.charge_starter_batt()
 
-                # RPi power-down at some point
-                Car.shut_down_controller()
+                else:
+                    # If Li batt V low, power down RPi.
+                    Car.shut_down_controller()
+                    # Will turn back on next time key turned to ACC (assuming enable switch on)
 
 
 if __name__ == "__main__":

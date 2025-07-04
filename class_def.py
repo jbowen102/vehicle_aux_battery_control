@@ -9,7 +9,11 @@ import automationhat as ah
 
 ALTERNATOR_OUTPUT_V_MIN = 13
 MAIN_V_MAX = 14.5
+MAIN_V_CHARGED = 12.6
+MAIN_V_MIN = 11.5
+
 AUX_V_MAX = 13.5
+AUX_V_MIN = 11.5      # Don't let aux batt drop below this.
 
 # Automation Hat pins
 AUX_BATT_V_MONITORING_PIN = 0   # labeled 1 on board
@@ -117,6 +121,7 @@ class Vehicle(object):
         Controller().close_relay(self.keepalive_relay_num) # Keep on whenever device is on.
 
     def is_acc_powered(self):
+        # Returns True when key in either ACC or ON position
         return Controller().is_input_high(self.key_acc_detect_pin)
 
     def is_key_on(self):
@@ -145,17 +150,82 @@ class Vehicle(object):
         else:
             return False
 
-    def get_main_voltage(self):
+    def _get_main_voltage(self):
         return self.StarterBatt.get_voltage()
 
-    def get_aux_voltage(self):
+    def _get_aux_voltage(self):
         return self.AuxBatt.get_voltage()
 
+    def get_main_oc_voltage_est(self):
+        # Needs hysteresis to avoid bang-bang ctrl
+        if self.is_engine_running():
+            return 13
+            # Too hard to estimate
+        elif self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_rev():
+            # Currently charging aux battery
+            offset = 0.5
+            # Offset depends on charge current, but no way to infer that currently.
+            # TODO experimentally determine more accurate value.
+            # Should this be reworked to automatically shut down charging, wait and then measure?
+        elif self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_fwd():
+            # Currently being charged, elevating voltage
+            offset = -0.5
+            # Offset depends on charge current, but no way to infer that currently.
+            # TODO experimentally determine more accurate value.
+            # Should this be reworked to automatically shut down charging, wait and then measure?
+        else:
+            offset = 0
+        return (self._get_aux_voltage() + offset)
+
+    def get_aux_oc_voltage_est(self):
+        # Needs hysteresis to avoid bang-bang ctrl
+        if self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_fwd():
+            # Currently charging starter battery
+            offset = 0.5
+            # TODO experimentally determine more accurate value.
+            # Offset depends on charge current, but no way to infer that currently.
+        elif self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_rev():
+            # Currently being charged, elevating voltage
+            offset = -0.5
+            # TODO experimentally determine more accurate value.
+            # Offset depends on charge current, but no way to infer that currently.
+        else:
+            offset = 0
+        return (self._get_aux_voltage() + offset)
+
+    def is_starter_batt_low(self):
+        return (self.get_main_oc_voltage_est() <= MAIN_V_MIN)
+
+    def is_starter_batt_charged(self):
+        return (self.get_aux_oc_voltage_est() >= MAIN_V_CHARGED)
+
+    def does_starter_batt_need_charge(self):
+        return not self.is_starter_batt_charged()
+
+    def is_aux_batt_empty(self):
+        return (self.get_aux_oc_voltage_est() <= AUX_V_MIN)
+
+    def is_aux_batt_sufficient(self):
+        return not self.is_aux_batt_empty()
+
+    def is_aux_batt_full(self):
+        return (self.get_aux_oc_voltage_est() >= AUX_V_MAX)
+
     def charge_starter_batt(self):
+        assert not self.is_aux_batt_empty(), "Called Vehicle.charge_starter_batt(), " \
+                                             "but aux batt V (%fV) is below min threshold %f." \
+                                             % (self.get_aux_oc_voltage_est(), AUX_V_MIN)
+        assert self.get_main_oc_voltage_est() < MAIN_V_MAX, "Called Vehicle.charge_starter_batt(), " \
+                                            "but starter batt V (%fV) is over max threshold %f." \
+                                            % (self.get_main_oc_voltage_est(), MAIN_V_MAX)
         self.BattCharger.set_charge_direction_fwd()
         self.BattCharger.enable_charge()
 
     def charge_aux_batt(self):
+        assert self.is_engine_running(), "Called Vehicle.charge_aux_batt(), but engine not running."
+        assert not self.is_aux_batt_full(), "Called Vehicle.charge_aux_batt(), " \
+                                            "but batt V (%fV) is over max threshold %f." \
+                                            % (self.get_aux_oc_voltage_est(), AUX_V_MAX)
         self.BattCharger.set_charge_direction_rev()
         self.BattCharger.enable_charge()
 
@@ -213,7 +283,7 @@ class BatteryCharger(object):
         return Controller().is_relay_off(self.charge_direction_relay)
 
     def set_charge_direction_fwd(self):
-        # Charge main battery with aux battery
+        # Charge starter battery with aux battery
         if self.is_charge_direction_rev():
             self.disable_charge()
             Controller().close_relay(self.charge_direction_relay)
