@@ -137,10 +137,9 @@ class Vehicle(object):
         # Either ACC power present or keepalive relay should always be powering switch.
         # If key in OFF position, only way to get signal here is with keepalive relay enabled.
         enable_detect = Controller().is_input_high(self.enable_sw_detect_pin)
-        if (not enable_detect) and self.is_key_off():
+        if Controller().is_relay_off(self.keepalive_relay_num) and self.is_key_off():
             # If key off and enable not detected, could be because keepalive relay off too.
-            # In this state, can't tell if enable switch on or off.
-            # Indeterminate reading
+            # In this state, can't tell if enable switch on or off. Indeterminate reading.
             Controller().close_relay(self.keepalive_relay_num) # Should have been on already, but if not, turn on.
             time.sleep(0.2) # Give time for propagation delay
             return self.is_enable_switch_closed()
