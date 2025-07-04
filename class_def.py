@@ -1,6 +1,6 @@
 import time
 import subprocess
-# from datetime import datetime, timedelta
+import datetime as dt
 # from colorama import Style, Fore, Back
 # import multiprocessing as mp
 
@@ -22,6 +22,39 @@ ENABLE_SWITCH_DETECT_PIN = 2    # labeled 3 on board
 CHARGER_ENABLE_RELAY = 0        # labeled 1 on board
 CHARGE_DIRECTION_RELAY = 1     # labeled 2 on board
 KEEPALIVE_RELAY = 2             # labeled 3 on board
+
+STATE_CHANGE_DELAY_SEC = 30
+RPI_SHUTDOWN_DELAY_SEC = 30
+
+
+class TimeKeeper(object):
+    def __init__(self):
+        self.state_change_timer_start = None
+        self.shutdown_timer_start = None
+
+    def start_charge_delay_timer(self):
+        """If called while timer already running, timer restarts.
+        """
+        self.state_change_timer_start = dt.datetime.now()
+
+    def has_charge_delay_time_elapsed(self):
+        """Evaluates if state-delay buffer time has elapsed since last state change.
+        Returns True or False.
+        """
+        if self.state_change_timer_start is None:
+            return True
+        else:
+            return self._has_time_elapsed(self.state_change_timer_start, STATE_CHANGE_DELAY_SEC)
+
+    def _get_time_elapsed(self, start_time):
+        return (dt.datetime.now() - start_time)
+
+    def _has_time_elapsed(self, start_time, threshold_sec):
+        if self._get_time_elapsed(start_time) >= dt.timedelta(seconds=threshold_sec):
+            return True
+        else:
+            return False
+        # https://www.tutorialspoint.com/How-can-we-do-date-and-time-math-in-Python
 
 
 class Controller(object):
@@ -81,7 +114,7 @@ class Vehicle(object):
         self.enable_sw_detect_pin = ENABLE_SWITCH_DETECT_PIN
         self.keepalive_relay_num = KEEPALIVE_RELAY
 
-        Controller().close_relay(KEEPALIVE_RELAY) # Keep on whenever device is on.
+        Controller().close_relay(self.keepalive_relay_num) # Keep on whenever device is on.
 
     def is_acc_powered(self):
         return Controller().is_input_high(self.key_acc_detect_pin)
