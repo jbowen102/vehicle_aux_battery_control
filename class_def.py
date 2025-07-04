@@ -99,10 +99,10 @@ class Controller(object):
 
     def shut_down(self):
         # First open all relays
-        for relay in self.relay_list:
-            self.open_relay(n)
-        subprocess.run(["sudo", "shutdown", "-P", "--now"],
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        for relay_num in self.relay_list:
+            self.open_relay(relay_num)
+        subprocess.run(["/usr/bin/sudo", "/sbin/shutdown", "-h", "now"],
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         # TODO set up to run automatically w/ superuser priveleges
 
 
@@ -213,10 +213,10 @@ class Vehicle(object):
 
     def charge_starter_batt(self):
         assert not self.is_aux_batt_empty(), "Called Vehicle.charge_starter_batt(), " \
-                                             "but aux batt V (%fV) is below min threshold %f." \
+                                             "but aux batt V (%.2fV) is below min threshold %.2f." \
                                              % (self.get_aux_oc_voltage_est(), AUX_V_MIN)
         assert self.get_main_oc_voltage_est() < MAIN_V_MAX, "Called Vehicle.charge_starter_batt(), " \
-                                            "but starter batt V (%fV) is over max threshold %f." \
+                                            "but starter batt V (%.2fV) is over max threshold %.2f." \
                                             % (self.get_main_oc_voltage_est(), MAIN_V_MAX)
         self.BattCharger.set_charge_direction_fwd()
         self.BattCharger.enable_charge()
@@ -224,7 +224,7 @@ class Vehicle(object):
     def charge_aux_batt(self):
         assert self.is_engine_running(), "Called Vehicle.charge_aux_batt(), but engine not running."
         assert not self.is_aux_batt_full(), "Called Vehicle.charge_aux_batt(), " \
-                                            "but batt V (%fV) is over max threshold %f." \
+                                            "but batt V (%.2fV) is over max threshold %.2f." \
                                             % (self.get_aux_oc_voltage_est(), AUX_V_MAX)
         self.BattCharger.set_charge_direction_rev()
         self.BattCharger.enable_charge()
