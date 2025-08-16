@@ -1,10 +1,14 @@
+import os
 import time
 import subprocess
 import datetime as dt
-# from colorama import Style, Fore, Back
-# import multiprocessing as mp
+from colorama import Style, Fore, Back
 
 import automationhat as ah
+
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_DIR = os.path.join(SCRIPT_DIR, "logs")
 
 
 ALTERNATOR_OUTPUT_V_MIN = 13
@@ -31,8 +35,59 @@ STATE_CHANGE_DELAY_SEC = 30
 RPI_SHUTDOWN_DELAY_SEC = 30
 
 
-class TimeKeeper(object):
+
+class OutputHandler(object):
     def __init__(self):
+        self.create_log_file()
+
+    def create_log_file(self):
+        timestamp = dt.datetime.now().strftime("%Y%m%d")
+        log_filename = "%s.log" % timestamp
+        self.log_filepath = os.path.join(LOG_DIR, log_filename)
+        if not os.path.exists(self.log_filepath):
+            # If multiple runs on same day, appends to existing file.
+            # If program runs over midnight, after-midnight events will be in previous day's logs.
+            with open(self.log_filepath, "w") as fd:
+                pass
+
+    def add_to_log_file(self, print_str):
+        with open(self.log_filepath, "a") as log_file:
+            log_file.write("%s\n" % print_str)
+
+    def print_and_log(self, message, color=Fore.WHITE, style=Style.BRIGHT, prompt=False):
+        timestamp = dt.datetime.now().strftime("%Y%m%dT%H%M%S")
+        print_str = Style.NORMAL + timestamp + " " + color + style + message
+        log_str = timestamp + " " + message
+
+        if prompt:
+            print(print_str)
+            self.add_to_log_file(log_str)
+
+            user_input = input("> " + Style.RESET_ALL)
+            self.add_to_log_file("\t> " + user_input)
+            return user_input
+        else:
+            print(print_str + Style.RESET_ALL)
+            self.add_to_log_file(log_str)
+            return None
+
+    def print_temp(self, print_str, prompt_user=False):
+        return self.print_and_log("[TEMP]  %s" % print_str, Fore.CYAN, prompt=prompt_user)
+
+    def print_debug(self, print_str, prompt_user=False):
+        return self.print_and_log("[DEBUG] %s" % print_str, Fore.WHITE, Style.DIM, prompt=prompt_user)
+
+    def print_warn(self, print_str, prompt_user=False):
+        return self.print_and_log("[WARN]  %s" % print_str, Fore.YELLOW, prompt=prompt_user)
+
+    def print_err(self, print_str, prompt_user=False):
+        return self.print_and_log("[ERROR] %s" % print_str, Fore.RED, prompt=prompt_user)
+
+
+
+class TimeKeeper(object):
+    def __init__(self, Output):
+        self.Output = Output
         self.state_change_timer_start = None
         self.shutdown_timer_start = None
 
@@ -103,11 +158,12 @@ class Controller(object):
             self.open_relay(relay_num)
         subprocess.run(["/usr/bin/sudo", "/sbin/shutdown", "-h", "now"],
                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        # TODO set up to run automatically w/ superuser priveleges
+        # https://learn.sparkfun.com/tutorials/raspberry-pi-safe-reboot-and-shutdown-button/all
 
 
 class Vehicle(object):
-    def __init__(self):
+    def __init__(self, Output):
+        self.Output = Output
         self.StarterBatt = StarterBattery(MAIN_BATT_V_MONITORING_PIN)
         self.AuxBatt = AuxBattery(AUX_BATT_V_MONITORING_PIN)
         self.BattCharger = BatteryCharger()
@@ -174,7 +230,7 @@ class Vehicle(object):
             # Should this be reworked to automatically shut down charging, wait and then measure?
         else:
             offset = 0
-        return (self._get_aux_voltage() + offset)
+        return (self._get_main_voltage() + offset)
 
     def get_aux_oc_voltage_est(self):
         # Needs hysteresis to avoid bang-bang ctrl

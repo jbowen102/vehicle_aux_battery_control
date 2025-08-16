@@ -7,8 +7,9 @@ from class_def import Vehicle, TimeKeeper
 def main():
     time.sleep(5) # Give time for system to stabilize.
 
-    Car = Vehicle()
-    Timer = TimeKeeper()
+    Output = OutputHandler()
+    Car = Vehicle(Output)
+    Timer = TimeKeeper(Output)
 
     key_acc_powered =   Car.is_acc_powered()
     key_on_pos =        Car.is_key_on()
