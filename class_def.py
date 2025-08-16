@@ -35,12 +35,18 @@ STATE_CHANGE_DELAY_SEC = 30
 RPI_SHUTDOWN_DELAY_SEC = 30
 
 
+class ChargeControlError(Exception):
+    pass
+
+class SystemVoltageError(Exception):
+    pass
+
 
 class OutputHandler(object):
     def __init__(self):
-        self.create_log_file()
+        self._create_log_file()
 
-    def create_log_file(self):
+    def _create_log_file(self):
         timestamp = dt.datetime.now().strftime("%Y%m%d")
         log_filename = "%s.log" % timestamp
         self.log_filepath = os.path.join(LOG_DIR, log_filename)
@@ -50,38 +56,38 @@ class OutputHandler(object):
             with open(self.log_filepath, "w") as fd:
                 pass
 
-    def add_to_log_file(self, print_str):
+    def _add_to_log_file(self, print_str):
         with open(self.log_filepath, "a") as log_file:
             log_file.write("%s\n" % print_str)
 
-    def print_and_log(self, message, color=Fore.WHITE, style=Style.BRIGHT, prompt=False):
+    def _print_and_log(self, message, color=Fore.WHITE, style=Style.BRIGHT, prompt=False):
         timestamp = dt.datetime.now().strftime("%Y%m%dT%H%M%S")
         print_str = Style.NORMAL + timestamp + " " + color + style + message
         log_str = timestamp + " " + message
 
         if prompt:
             print(print_str)
-            self.add_to_log_file(log_str)
+            self._add_to_log_file(log_str)
 
             user_input = input("> " + Style.RESET_ALL)
-            self.add_to_log_file("\t> " + user_input)
+            self._add_to_log_file("\t> " + user_input)
             return user_input
         else:
             print(print_str + Style.RESET_ALL)
-            self.add_to_log_file(log_str)
+            self._add_to_log_file(log_str)
             return None
 
     def print_temp(self, print_str, prompt_user=False):
-        return self.print_and_log("[TEMP]  %s" % print_str, Fore.CYAN, prompt=prompt_user)
+        return self._print_and_log("[TEMP]  %s" % print_str, Fore.CYAN, prompt=prompt_user)
 
     def print_debug(self, print_str, prompt_user=False):
-        return self.print_and_log("[DEBUG] %s" % print_str, Fore.WHITE, Style.DIM, prompt=prompt_user)
+        return self._print_and_log("[DEBUG] %s" % print_str, Fore.WHITE, Style.DIM, prompt=prompt_user)
 
     def print_warn(self, print_str, prompt_user=False):
-        return self.print_and_log("[WARN]  %s" % print_str, Fore.YELLOW, prompt=prompt_user)
+        return self._print_and_log("[WARN]  %s" % print_str, Fore.YELLOW, prompt=prompt_user)
 
     def print_err(self, print_str, prompt_user=False):
-        return self.print_and_log("[ERROR] %s" % print_str, Fore.RED, prompt=prompt_user)
+        return self._print_and_log("[ERROR] %s" % print_str, Fore.RED, prompt=prompt_user)
 
 
 
@@ -91,19 +97,26 @@ class TimeKeeper(object):
         self.state_change_timer_start = None
         self.shutdown_timer_start = None
 
-    def start_charge_delay_timer(self):
+    def start_charge_delay_timer(self, log=True):
         """If called while timer already running, timer restarts.
         """
         self.state_change_timer_start = dt.datetime.now()
+        if log:
+            self.Output.print_debug("Charge-delay timer started at %s." % self.state_change_timer_start.strftime("%H:%M:%S"))
 
-    def has_charge_delay_time_elapsed(self):
+    def has_charge_delay_time_elapsed(self, log=True):
         """Evaluates if state-delay buffer time has elapsed since last state change.
         Returns True or False.
         """
         if self.state_change_timer_start is None:
+            if log:
+                self.Output.print_debug("Charge-delay timer has not been started.")
             return True
         else:
-            return self._has_time_elapsed(self.state_change_timer_start, STATE_CHANGE_DELAY_SEC)
+            is_time_up = self._has_time_elapsed(self.state_change_timer_start, STATE_CHANGE_DELAY_SEC)
+            if log:
+                self.Output.print_debug("Charge-delay time %s elapsed." % ("has" if is_time_up else "has not"))
+            return is_time_up
 
     def _get_time_elapsed(self, start_time):
         return (dt.datetime.now() - start_time)
@@ -189,67 +202,95 @@ class Vehicle(object):
     def is_engine_running(self):
         return self.StarterBatt.get_voltage() >= ALTERNATOR_OUTPUT_V_MIN
 
-    def is_enable_switch_closed(self):
+    def is_enable_switch_closed(self, log=False):
         # Either ACC power present or keepalive relay should always be powering switch.
         # If key in OFF position, only way to get signal here is with keepalive relay enabled.
-        enable_detect = Controller().is_input_high(self.enable_sw_detect_pin)
         if Controller().is_relay_off(self.keepalive_relay_num) and self.is_key_off():
             # If key off and enable not detected, could be because keepalive relay off too.
             # In this state, can't tell if enable switch on or off. Indeterminate reading.
+            self.Output.log_err("Keepalive relay off when expected to be held on during enable-switch state check.")
             Controller().close_relay(self.keepalive_relay_num) # Should have been on already, but if not, turn on.
             time.sleep(0.2) # Give time for propagation delay
-            return self.is_enable_switch_closed()
+            return self.is_enable_switch_closed(log=log)
 
-        if enable_detect:
-            return True
-        else:
-            return False
+        enable_detect = Controller().is_input_high(self.enable_sw_detect_pin)
+        if log:
+            self.Output.print_debug("Enable switch %s" % ("ON" if enable_detect else "OFF"))
+        return enable_detect
 
-    def _get_main_voltage(self):
-        return self.StarterBatt.get_voltage()
+    def get_main_voltage_raw(self, log=False):
+        voltage = self.StarterBatt.get_voltage()
+        if log:
+            self.Output.print_debug("Main voltage (raw): %.2fV" % voltage)
+        return voltage
 
-    def _get_aux_voltage(self):
-        return self.AuxBatt.get_voltage()
+    def get_aux_voltage_raw(self, log=False):
+        voltage = self.AuxBatt.get_voltage()
+        if log:
+            self.Output.print_debug("Aux voltage (raw): %.2fV" % voltage)
+        return voltage
 
-    def get_main_oc_voltage_est(self):
+    def get_main_oc_voltage_est(self, log=False):
         # Needs hysteresis to avoid bang-bang ctrl
         if self.is_engine_running():
             return 13
             # Too hard to estimate
+            if log:
+                self.Output.print_warn("Engine running during main open-circuit voltage estimation.")
         elif self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_rev():
             # Currently charging aux battery
             offset = 0.5
             # Offset depends on charge current, but no way to infer that currently.
             # TODO experimentally determine more accurate value.
             # Should this be reworked to automatically shut down charging, wait and then measure?
+            if log:
+                self.Output.print_warn("Charging aux battery during main open-circuit voltage estimation.")
         elif self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_fwd():
             # Currently being charged, elevating voltage
             offset = -0.5
             # Offset depends on charge current, but no way to infer that currently.
             # TODO experimentally determine more accurate value.
             # Should this be reworked to automatically shut down charging, wait and then measure?
+            if log:
+                self.Output.print_warn("Main battery being charged by aux batt during main open-circuit voltage estimation.")
         else:
             offset = 0
-        return (self._get_main_voltage() + offset)
 
-    def get_aux_oc_voltage_est(self):
+        voltage_est = self.get_main_voltage_raw(log=log) + offset
+        if log:
+            self.Output.print_debug("Main open-circuit voltage est: %.2fV (includes %.1fV offset)" % (voltage_est, offset))
+        return voltage_est
+
+    def get_aux_oc_voltage_est(self, log=False):
         # Needs hysteresis to avoid bang-bang ctrl
         if self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_fwd():
             # Currently charging starter battery
             offset = 0.5
             # TODO experimentally determine more accurate value.
             # Offset depends on charge current, but no way to infer that currently.
+            if log:
+                self.Output.print_warn("Charging starter battery during aux-batt open-circuit voltage estimation.")
         elif self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_rev():
             # Currently being charged, elevating voltage
             offset = -0.5
             # TODO experimentally determine more accurate value.
             # Offset depends on charge current, but no way to infer that currently.
+            if log:
+                self.Output.print_warn("Aux battery being charged during aux-batt open-circuit voltage estimation.")
         else:
             offset = 0
-        return (self._get_aux_voltage() + offset)
 
-    def is_starter_batt_low(self):
-        return (self.get_main_oc_voltage_est() <= MAIN_V_MIN)
+        voltage_est = self.get_aux_voltage_raw(log=log) + offset
+        if log:
+            self.Output.print_debug("Aux open-circuit voltage est: %.2fV (includes %.1fV offset)" % (voltage_est, offset))
+        return voltage_est
+
+    def is_starter_batt_low(self, log=True):
+        est_voltage = self.get_main_oc_voltage_est(log=log)
+        is_low = est_voltage <= MAIN_V_MIN
+        if log and is_low:
+            self.Output.print_warn("Starter-batt voltage %.2f below min allowed %.2f." % (est_voltage, MAIN_V_MIN))
+        return is_low
 
     def is_starter_batt_charged(self):
         return (self.get_aux_oc_voltage_est() >= MAIN_V_CHARGED)
@@ -257,37 +298,67 @@ class Vehicle(object):
     def does_starter_batt_need_charge(self):
         return not self.is_starter_batt_charged()
 
-    def is_aux_batt_empty(self):
-        return (self.get_aux_oc_voltage_est() <= AUX_V_MIN)
+    def is_aux_batt_empty(self, log=True):
+        est_voltage = self.get_aux_oc_voltage_est(log=log)
+        is_low = est_voltage <= AUX_V_MIN
+        if log and is_low:
+            self.Output.print_warn("Aux-batt voltage %.2f below min allowed %.2f." % (est_voltage, AUX_V_MIN))
+        elif log:
+            self.Output.print_debug("Aux-batt voltage %.2f sufficient (min allowed: %.2f)." % (est_voltage, AUX_V_MIN))
+        return is_low
 
     def is_aux_batt_sufficient(self):
         return not self.is_aux_batt_empty()
 
-    def is_aux_batt_full(self):
-        return (self.get_aux_oc_voltage_est() >= AUX_V_MAX)
+    def is_aux_batt_full(self, log=True):
+        est_voltage = self.get_aux_oc_voltage_est(log=log)
+        is_full = est_voltage >= AUX_V_MAX
+        if log and is_full:
+            self.Output.print_debug("Aux batt full (%.2fV)" % est_voltage)
+        return is_full
 
-    def charge_starter_batt(self):
-        assert not self.is_aux_batt_empty(), "Called Vehicle.charge_starter_batt(), " \
-                                             "but aux batt V (%.2fV) is below min threshold %.2f." \
-                                             % (self.get_aux_oc_voltage_est(), AUX_V_MIN)
-        assert self.get_main_oc_voltage_est() < MAIN_V_MAX, "Called Vehicle.charge_starter_batt(), " \
-                                            "but starter batt V (%.2fV) is over max threshold %.2f." \
-                                            % (self.get_main_oc_voltage_est(), MAIN_V_MAX)
+    def charge_starter_batt(self, log=True):
+        if self.is_aux_batt_empty(log=log):
+            output_str = "Called Vehicle.charge_starter_batt(), " \
+                         "but aux batt V (%.2fV) is below min threshold %.2f." \
+                         % (self.get_aux_oc_voltage_est(log=False), AUX_V_MIN)
+            self.Output.print_err(output_str)
+            raise ChargeControlError(output_str)
+        if self.get_main_oc_voltage_est(log=log) > MAIN_V_MAX:
+            output_str = "Called Vehicle.charge_starter_batt(), " \
+                         "but starter batt V (%.2fV) is over max threshold %.2f." \
+                         % (self.get_main_oc_voltage_est(log=False), MAIN_V_MAX)
+            self.Output.print_err(output_str)
+            raise SystemVoltageError(output_str)
+
         self.BattCharger.set_charge_direction_fwd()
         self.BattCharger.enable_charge()
+        if log:
+            self.Output.print_debug("Charging starter batt.")
 
-    def charge_aux_batt(self):
-        assert self.is_engine_running(), "Called Vehicle.charge_aux_batt(), but engine not running."
-        assert not self.is_aux_batt_full(), "Called Vehicle.charge_aux_batt(), " \
-                                            "but batt V (%.2fV) is over max threshold %.2f." \
-                                            % (self.get_aux_oc_voltage_est(), AUX_V_MAX)
+    def charge_aux_batt(self, log=True):
+        if not self.is_engine_running():
+            output_str = "Called Vehicle.charge_aux_batt(), but engine not running."
+            self.Output.print_err(output_str)
+            raise ChargeControlError(output_str)
+        if self.is_aux_batt_full(log=log):
+            output_str = "Called Vehicle.charge_aux_batt(), " \
+                         "and aux batt already full (%.2fV > %.2fV." \
+                         % (self.get_aux_oc_voltage_est(log=False), AUX_V_MAX)
+            self.Output.print_debug(output_str)
+
         self.BattCharger.set_charge_direction_rev()
         self.BattCharger.enable_charge()
+        if log:
+            self.Output.print_debug("Charging starter batt.")
 
-    def stop_charging(self):
+    def stop_charging(self, log=True):
         self.BattCharger.disable_charge()
+        if log:
+            self.Output.print_debug("Stopped charging.")
 
     def shut_down_controller(self):
+        self.Output.print_warn("Shutting down controller.")
         Controller().shut_down()
 
 
@@ -308,7 +379,8 @@ class AuxBattery(Battery):
 
 
 class BatteryCharger(object):
-    def __init__(self):
+    def __init__(self, Output):
+        self.Output = Output
         self.charger_enable_relay = CHARGER_ENABLE_RELAY
         self.charge_direction_relay = CHARGE_DIRECTION_RELAY
 
@@ -319,7 +391,9 @@ class BatteryCharger(object):
         if not self.is_charging():
             Controller().close_relay(self.charger_enable_relay)
             time.sleep(0.5)
-        assert self.is_charging(), "BatteryCharger.enable_charge() failed to start charging."
+        if not self.is_charging():
+            self.Output.print_err("BatteryCharger.enable_charge() failed to start charging.")
+            raise ChargeControlError("BatteryCharger.enable_charge() failed to start charging.")
 
     def disable_charge(self):
         if self.is_charging():
@@ -328,8 +402,13 @@ class BatteryCharger(object):
             time.sleep(0.5)
             # Also release charge-direction relay to avoid wasting energy through its coil.
             Controller().open_relay(self.charge_direction_relay)
-        assert not self.is_charging(), "BatteryCharger.disable_charge() failed to stop charging."
-        assert Controller().is_relay_off(self.charge_direction_relay), "BatteryCharger.disable_charge() failed to open charge-direction relay."
+
+        if self.is_charging():
+            self.Output.print_err("BatteryCharger.disable_charge() failed to stop charging.")
+            raise ChargeControlError("BatteryCharger.disable_charge() failed to stop charging.")
+        if not Controller().is_relay_off(self.charge_direction_relay):
+            self.Output.print_err("BatteryCharger.disable_charge() failed to open charge-direction relay.")
+            raise ChargeControlError("BatteryCharger.disable_charge() failed to open charge-direction relay.")
 
     def is_charge_direction_fwd(self):
         return Controller().is_relay_on(self.charge_direction_relay)
@@ -343,7 +422,9 @@ class BatteryCharger(object):
             self.disable_charge()
             Controller().close_relay(self.charge_direction_relay)
             time.sleep(0.5)
-        assert self.is_charge_direction_fwd(), "BatteryCharger.set_charge_direction_fwd() failed to set direction."
+        if not self.is_charge_direction_fwd():
+            self.Output.print_err("BatteryCharger.set_charge_direction_fwd() failed to set direction.")
+            raise ChargeControlError("BatteryCharger.set_charge_direction_fwd() failed to set direction.")
 
     def set_charge_direction_rev(self):
         # Charge aux battery with alternator
@@ -351,5 +432,7 @@ class BatteryCharger(object):
             self.disable_charge()
             Controller().open_relay(self.charge_direction_relay)
             time.sleep(0.5)
-        assert self.is_charge_direction_rev(), "BatteryCharger.set_charge_direction_rev() failed to set direction."
+        if not self.is_charge_direction_rev():
+            self.Output.print_err("BatteryCharger.set_charge_direction_rev() failed to set direction.")
+            raise ChargeControlError("BatteryCharger.set_charge_direction_rev() failed to set direction.")
 
