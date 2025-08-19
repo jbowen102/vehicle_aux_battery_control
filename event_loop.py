@@ -1,6 +1,6 @@
 import time
 
-from class_def import Vehicle, TimeKeeper
+from class_def import Vehicle, TimeKeeper, OutputHandler
 
 
 
@@ -8,89 +8,101 @@ def main():
     time.sleep(5) # Give time for system to stabilize.
 
     Output = OutputHandler()
-    Car = Vehicle(Output)
-    Timer = TimeKeeper(Output)
+    Car    = Vehicle(Output)
+    Timer  = TimeKeeper(Output)
 
-    key_acc_powered =   Car.is_acc_powered()
-    key_on_pos =        Car.is_key_on()
-    engine_on_state =   Car.is_engine_running()
+    key_acc_powered   = Car.is_acc_powered()
+    key_on_pos        = Car.is_key_on()
+    engine_on_state   = Car.is_engine_running()
     sys_enabled_state = Car.is_enable_switch_closed()
 
-    Timer.start_charge_delay_timer() # Treat RPi startup triggering as a state change.
+    Timer.start_charge_delay_timer("program startup") # Treat RPi startup triggering as a state change.
+
 
     while True:
-
         # Check for enable-switch state change
         if not Car.is_enable_switch_closed() and sys_enabled_state:
             # Switch opened for the first time.
+            Car.is_enable_switch_closed(log=True) # Call again just for logging
             sys_enabled_state = False
-            Car.stop_charging()
-            # TODO Start system shutdown timer.
+            Car.stop_charging(log=True)
+            Timer.start_shutdown_timer(log=True)
             continue
         elif Car.is_enable_switch_closed() and not sys_enabled_state:
             # Enable switch closed (during previous timeout)
+            Car.is_enable_switch_closed(log=True) # Call again just for logging
             sys_enabled_state = True
-            # TODO Stop shutdown timer
-            Timer.start_charge_delay_timer()  # Re-enter appropriate operating mode below after delay.
+            Timer.stop_shutdown_timer(log=True)
+            Timer.start_charge_delay_timer("enable switch closed")  # Re-enter appropriate operating mode below after delay.
             continue
 
+        # Shut down if shutdown countdown has ended.
+        if Timer.has_shutdown_delay_elapsed(log=False):
+            Timer.has_shutdown_delay_elapsed(log=True) # Call again just for logging
+            Car.shut_down_controller()
 
-        # Check for key state changes
+
+        # Check for vehicle operating-state changes
         if Car.is_acc_powered() and not key_acc_powered:
-            # Key switched from OFF to ACC
+            Output.print_debug("Key switched from OFF to ACC")
             key_acc_powered = True
             Car.stop_charging()
-            Timer.start_charge_delay_timer()
+            Timer.start_charge_delay_timer("key OFF -> ACC")
             continue
 
         elif not Car.is_acc_powered() and key_acc_powered:
-            # Key switched from ACC to OFF
+            Output.print_debug("Key switched from ACC to OFF")
             key_acc_powered = False
             # Okay to continue charging across this transition.
-            Timer.start_charge_delay_timer()
+            Timer.start_charge_delay_timer("key ACC -> OFF")
             continue
 
         elif Car.is_key_on() and not key_on_pos:
-            # Key switched from ACC to ON
+            Output.print_debug("Key switched from ACC to ON")
             key_on_pos = True
             Car.stop_charging()
-            Timer.start_charge_delay_timer()
+            Timer.start_charge_delay_timer("key ACC -> ON")
             continue
 
         elif not Car.is_key_on() and key_on_pos:
-            # Key switched from ON to ACC
+            Output.print_debug("Key switched from ON to ACC")
             key_on_pos = False
             Car.stop_charging()
-            Timer.start_charge_delay_timer()
+            Timer.start_charge_delay_timer("key ON -> ACC")
             continue
 
         elif Car.is_engine_running() and not engine_on_state:
-            # Engine started
+            Output.print_debug("Engine started")
             engine_on_state = True
             Car.stop_charging()
-            Timer.start_charge_delay_timer()
+            Timer.start_charge_delay_timer("engine started")
             continue
 
         elif not Car.is_engine_running() and engine_on_state:
-            # Engine stopped
+            Output.print_debug("Engine stopped")
             engine_on_state = False
             Car.stop_charging()
             continue
 
 
-        # Enter new charging mode based on current state.
-        if Timer.has_charge_delay_time_elapsed():
+        ready, first_time_ind = Timer.has_charge_delay_time_elapsed()
+        # Enter new charging mode (if first_time_ind is True) based on current state.
+        # Or continue with current mode.
+        if ready:
+            if first_time_ind:
+                Output.print_debug("Charge-delay time has elapsed.")
+
             if Car.is_engine_running():
                 # Key ON, engine running.
-                if Car.is_aux_batt_full():
-                    Timer.start_charge_delay_timer()
+                if Car.is_aux_batt_full(log=first_time_ind):
+                    Timer.start_charge_delay_timer("aux battery full already")
                 else:
-                    Car.charge_aux_batt()
+                    Car.charge_aux_batt(log=first_time_ind)
 
             elif Car.is_acc_powered():
                 # Key in ACC or ON but engine off.
-                if Car.is_aux_batt_sufficient():
-                    Car.charge_starter_batt()
+                if Car.is_aux_batt_sufficient(log=first_time_ind):
+                    Car.charge_starter_batt(log=first_time_ind)
                 else:
                     # If Li batt V low, power down RPi.
                     Car.shut_down_controller()
@@ -98,9 +110,9 @@ def main():
 
             elif Car.is_key_off():
                 # Key OFF
-                if Car.does_starter_batt_need_charge() and Car.is_aux_batt_sufficient():
+                if Car.does_starter_batt_need_charge(log=first_time_ind) and Car.is_aux_batt_sufficient(log=first_time_ind):
                     # Keep charging while FLA batt needs charge and Li batt V sufficient.
-                    Car.charge_starter_batt()
+                    Car.charge_starter_batt(log=first_time_ind)
 
                 else:
                     # If Li batt V low, power down RPi.

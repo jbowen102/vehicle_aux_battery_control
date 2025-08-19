@@ -97,26 +97,50 @@ class TimeKeeper(object):
         self.state_change_timer_start = None
         self.shutdown_timer_start = None
 
-    def start_charge_delay_timer(self, log=True):
+    def start_shutdown_timer(self, log=True):
+        """If called while timer already running, timer restarts.
+        """
+        self.shutdown_timer_start = dt.datetime.now()
+        if log:
+            self.Output.print_debug("RPi shutdown timer started at %s." % self.state_change_timer_start.strftime("%H:%M:%S"))
+
+    def stop_shutdown_timer(self, log=True):
+        self.shutdown_timer_start = None
+        if log:
+            self.Output.print_debug("RPi shutdown timer stopped.")
+
+    def has_shutdown_delay_elapsed(self, log=False):
+        """Evaluates if shutdown grace period has elapsed.
+        Returns True or False.
+        """
+        if self.shutdown_timer_start is None:
+            return False
+        else:
+            is_time_up = self._has_time_elapsed(self.shutdown_timer_start, RPI_SHUTDOWN_DELAY_SEC)
+            if is_time_up and log:
+                self.Output.print_debug("Shutdown-delay time has elapsed.")
+            return is_time_up
+
+    def start_charge_delay_timer(self, state_change_desc, log=True):
         """If called while timer already running, timer restarts.
         """
         self.state_change_timer_start = dt.datetime.now()
         if log:
-            self.Output.print_debug("Charge-delay timer started at %s." % self.state_change_timer_start.strftime("%H:%M:%S"))
+            self.Output.print_debug("Charge-delay timer started (%s) at %s." % (state_change_desc, self.state_change_timer_start.strftime("%H:%M:%S")))
 
-    def has_charge_delay_time_elapsed(self, log=True):
+    def has_charge_delay_time_elapsed(self):
         """Evaluates if state-delay buffer time has elapsed since last state change.
-        Returns True or False.
+        Returns two booleans - first indicates whether charge-delay time has elapsed.
+        Second indicates if this is the first calling of the method that the response
+        has been "True" since the timer started.
         """
         if self.state_change_timer_start is None:
-            if log:
-                self.Output.print_debug("Charge-delay timer has not been started.")
-            return True
+            return (True, False)
         else:
             is_time_up = self._has_time_elapsed(self.state_change_timer_start, STATE_CHANGE_DELAY_SEC)
-            if log:
-                self.Output.print_debug("Charge-delay time %s elapsed." % ("has" if is_time_up else "has not"))
-            return is_time_up
+            if is_time_up:
+                self.state_change_timer_start = None
+            return (is_time_up, is_time_up)
 
     def _get_time_elapsed(self, start_time):
         return (dt.datetime.now() - start_time)
@@ -179,7 +203,7 @@ class Vehicle(object):
         self.Output = Output
         self.StarterBatt = StarterBattery(MAIN_BATT_V_MONITORING_PIN)
         self.AuxBatt = AuxBattery(AUX_BATT_V_MONITORING_PIN)
-        self.BattCharger = BatteryCharger()
+        self.BattCharger = BatteryCharger(self.Output)
 
         self.key_acc_detect_pin = KEY_ACC_INPUT_PIN
         self.key_on_detect_pin = KEY_ON_INPUT_PIN
@@ -292,11 +316,11 @@ class Vehicle(object):
             self.Output.print_warn("Starter-batt voltage %.2f below min allowed %.2f." % (est_voltage, MAIN_V_MIN))
         return is_low
 
-    def is_starter_batt_charged(self):
-        return (self.get_aux_oc_voltage_est() >= MAIN_V_CHARGED)
+    def is_starter_batt_charged(self, log=False):
+        return (self.get_aux_oc_voltage_est(log=log) >= MAIN_V_CHARGED)
 
-    def does_starter_batt_need_charge(self):
-        return not self.is_starter_batt_charged()
+    def does_starter_batt_need_charge(self, log=False):
+        return not self.is_starter_batt_charged(log=log)
 
     def is_aux_batt_empty(self, log=True):
         est_voltage = self.get_aux_oc_voltage_est(log=log)
@@ -307,10 +331,10 @@ class Vehicle(object):
             self.Output.print_debug("Aux-batt voltage %.2f sufficient (min allowed: %.2f)." % (est_voltage, AUX_V_MIN))
         return is_low
 
-    def is_aux_batt_sufficient(self):
-        return not self.is_aux_batt_empty()
+    def is_aux_batt_sufficient(self, log=False):
+        return not self.is_aux_batt_empty(log=log)
 
-    def is_aux_batt_full(self, log=True):
+    def is_aux_batt_full(self, log=False):
         est_voltage = self.get_aux_oc_voltage_est(log=log)
         is_full = est_voltage >= AUX_V_MAX
         if log and is_full:
@@ -336,7 +360,7 @@ class Vehicle(object):
         if log:
             self.Output.print_debug("Charging starter batt.")
 
-    def charge_aux_batt(self, log=True):
+    def charge_aux_batt(self, log=False):
         if not self.is_engine_running():
             output_str = "Called Vehicle.charge_aux_batt(), but engine not running."
             self.Output.print_err(output_str)
