@@ -15,6 +15,9 @@ def main():
     key_on_pos        = Car.is_key_on()
     engine_on_state   = Car.is_engine_running()
     sys_enabled_state = Car.is_enable_switch_closed()
+    Output.print_info("Key @ %s." % ("ON" if key_on_pos else ("ACC" if key_acc_powered else "OFF")))
+    Output.print_info("Engine %s." % ("ON" if engine_on_state else "OFF"))
+    Output.print_info("System %s." % ("enabled" if sys_enabled_state else "disabled"))
 
     Timer.start_charge_delay_timer("program startup") # Treat RPi startup triggering as a state change.
 
@@ -44,42 +47,42 @@ def main():
 
         # Check for vehicle operating-state changes
         if Car.is_acc_powered() and not key_acc_powered:
-            Output.print_debug("Key switched from OFF to ACC")
+            Output.print_info("Key switched from OFF to ACC")
             key_acc_powered = True
             Car.stop_charging()
             Timer.start_charge_delay_timer("key OFF -> ACC")
             continue
 
         elif not Car.is_acc_powered() and key_acc_powered:
-            Output.print_debug("Key switched from ACC to OFF")
+            Output.print_info("Key switched from ACC to OFF")
             key_acc_powered = False
             # Okay to continue charging across this transition.
             Timer.start_charge_delay_timer("key ACC -> OFF")
             continue
 
         elif Car.is_key_on() and not key_on_pos:
-            Output.print_debug("Key switched from ACC to ON")
+            Output.print_info("Key switched from ACC to ON")
             key_on_pos = True
             Car.stop_charging()
             Timer.start_charge_delay_timer("key ACC -> ON")
             continue
 
         elif not Car.is_key_on() and key_on_pos:
-            Output.print_debug("Key switched from ON to ACC")
+            Output.print_info("Key switched from ON to ACC")
             key_on_pos = False
             Car.stop_charging()
             Timer.start_charge_delay_timer("key ON -> ACC")
             continue
 
         elif Car.is_engine_running() and not engine_on_state:
-            Output.print_debug("Engine started")
+            Output.print_info("Engine started")
             engine_on_state = True
             Car.stop_charging()
             Timer.start_charge_delay_timer("engine started")
             continue
 
         elif not Car.is_engine_running() and engine_on_state:
-            Output.print_debug("Engine stopped")
+            Output.print_info("Engine stopped")
             engine_on_state = False
             Car.stop_charging()
             continue

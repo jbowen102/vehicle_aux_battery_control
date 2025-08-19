@@ -80,6 +80,9 @@ class OutputHandler(object):
     def print_temp(self, print_str, prompt_user=False):
         return self._print_and_log("[TEMP]  %s" % print_str, Fore.CYAN, prompt=prompt_user)
 
+    def print_info(self, print_str, prompt_user=False):
+        return self._print_and_log("[INFO]  %s" % print_str, Fore.WHITE, prompt=prompt_user)
+
     def print_debug(self, print_str, prompt_user=False):
         return self._print_and_log("[DEBUG] %s" % print_str, Fore.WHITE, Style.DIM, prompt=prompt_user)
 
@@ -224,7 +227,7 @@ class Vehicle(object):
         return not self.is_acc_powered()
 
     def is_engine_running(self):
-        return self.StarterBatt.get_voltage() >= ALTERNATOR_OUTPUT_V_MIN
+        return self.get_main_voltage_raw(log=False) >= ALTERNATOR_OUTPUT_V_MIN
 
     def is_enable_switch_closed(self, log=False):
         # Either ACC power present or keepalive relay should always be powering switch.
@@ -313,7 +316,7 @@ class Vehicle(object):
         est_voltage = self.get_main_oc_voltage_est(log=log)
         is_low = est_voltage <= MAIN_V_MIN
         if log and is_low:
-            self.Output.print_warn("Starter-batt voltage %.2f below min allowed %.2f." % (est_voltage, MAIN_V_MIN))
+            self.Output.print_warn("Starter-batt voltage %.2fV below min allowed %.2fV." % (est_voltage, MAIN_V_MIN))
         return is_low
 
     def is_starter_batt_charged(self, log=False):
@@ -326,9 +329,9 @@ class Vehicle(object):
         est_voltage = self.get_aux_oc_voltage_est(log=log)
         is_low = est_voltage <= AUX_V_MIN
         if log and is_low:
-            self.Output.print_warn("Aux-batt voltage %.2f below min allowed %.2f." % (est_voltage, AUX_V_MIN))
+            self.Output.print_warn("Aux-batt voltage %.2fV below min allowed %.2fV." % (est_voltage, AUX_V_MIN))
         elif log:
-            self.Output.print_debug("Aux-batt voltage %.2f sufficient (min allowed: %.2f)." % (est_voltage, AUX_V_MIN))
+            self.Output.print_debug("Aux-batt voltage %.2fV sufficient (min allowed: %.2fV)." % (est_voltage, AUX_V_MIN))
         return is_low
 
     def is_aux_batt_sufficient(self, log=False):
@@ -342,15 +345,15 @@ class Vehicle(object):
         return is_full
 
     def charge_starter_batt(self, log=True):
-        if self.is_aux_batt_empty(log=log):
+        if self.is_aux_batt_empty(log=False):
             output_str = "Called Vehicle.charge_starter_batt(), " \
-                         "but aux batt V (%.2fV) is below min threshold %.2f." \
+                         "but aux batt V (%.2fV) is below min threshold %.2fV." \
                          % (self.get_aux_oc_voltage_est(log=False), AUX_V_MIN)
             self.Output.print_err(output_str)
             raise ChargeControlError(output_str)
         if self.get_main_oc_voltage_est(log=log) > MAIN_V_MAX:
             output_str = "Called Vehicle.charge_starter_batt(), " \
-                         "but starter batt V (%.2fV) is over max threshold %.2f." \
+                         "but starter batt V (%.2fV) is over max threshold %.2fV." \
                          % (self.get_main_oc_voltage_est(log=False), MAIN_V_MAX)
             self.Output.print_err(output_str)
             raise SystemVoltageError(output_str)
@@ -358,28 +361,28 @@ class Vehicle(object):
         self.BattCharger.set_charge_direction_fwd()
         self.BattCharger.enable_charge()
         if log:
-            self.Output.print_debug("Charging starter batt.")
+            self.Output.print_info("Charging starter battery.")
 
     def charge_aux_batt(self, log=False):
         if not self.is_engine_running():
             output_str = "Called Vehicle.charge_aux_batt(), but engine not running."
             self.Output.print_err(output_str)
             raise ChargeControlError(output_str)
-        if self.is_aux_batt_full(log=log):
+        if self.is_aux_batt_full(log=False):
             output_str = "Called Vehicle.charge_aux_batt(), " \
                          "and aux batt already full (%.2fV > %.2fV." \
                          % (self.get_aux_oc_voltage_est(log=False), AUX_V_MAX)
-            self.Output.print_debug(output_str)
+            self.Output.print_warn(output_str)
 
         self.BattCharger.set_charge_direction_rev()
         self.BattCharger.enable_charge()
         if log:
-            self.Output.print_debug("Charging starter batt.")
+            self.Output.print_info("Charging auxiliary battery.")
 
     def stop_charging(self, log=True):
         self.BattCharger.disable_charge()
         if log:
-            self.Output.print_debug("Stopped charging.")
+            self.Output.print_info("Stopped charging.")
 
     def shut_down_controller(self):
         self.Output.print_warn("Shutting down controller.")
