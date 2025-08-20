@@ -1,6 +1,6 @@
 import time
 
-from class_def import Vehicle, TimeKeeper, OutputHandler
+from class_def import Vehicle, Controller, TimeKeeper, OutputHandler
 
 
 
@@ -56,7 +56,7 @@ def main(Output):
         elif not Car.is_acc_powered() and key_acc_powered:
             Output.print_info("Key switched from ACC to OFF.")
             key_acc_powered = False
-            # Okay to continue charging across this transition.
+            Car.stop_charging()
             Timer.start_charge_delay_timer("key ACC -> OFF")
             continue
 
@@ -107,7 +107,7 @@ def main(Output):
             elif Car.is_acc_powered():
                 # Key in ACC or ON but engine off.
                 if first_time_ind:
-                    Output.print_info("State: Key in ACC or ON but engine off.")
+                    Output.print_info("State: Key %s." % ("ON, engine off" if Car.is_key_on() else "in ACC (engine off)"))
                 if Car.is_aux_batt_sufficient(log=first_time_ind):
                     Car.charge_starter_batt(log=first_time_ind)
                 else:
@@ -137,9 +137,14 @@ if __name__ == "__main__":
     Output = OutputHandler()
     try:
         main(Output)
-    except Exception as exception_text:
-        Controller().open_all_relays()
+    except KeyboardInterrupt:
+        Output.print_err("Keyboard interrupt.")
+    except Exception:
+        error_message = traceback.format_exc()
         Output.print_err("Exception thrown in event loop:")
-        Output.print_err(exception_text)
+        Output.print_err(error_message)
+        Output.print_err("")
+    finally:
+        Controller().open_all_relays()
         # Output.print_warn("Shutting down controller.")
         # Controller().shut_down()

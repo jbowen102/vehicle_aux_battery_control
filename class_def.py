@@ -216,6 +216,7 @@ class Vehicle(object):
         self.enable_sw_detect_pin = ENABLE_SWITCH_DETECT_PIN
         self.keepalive_relay_num = KEEPALIVE_RELAY
 
+        Controller().open_all_relays()
         Controller().close_relay(self.keepalive_relay_num) # Keep on whenever device is on.
 
     def is_acc_powered(self):
