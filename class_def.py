@@ -107,6 +107,12 @@ class TimeKeeper(object):
         if log:
             self.Output.print_debug("RPi shutdown timer started at %s." % self.shutdown_timer_start.strftime("%H:%M:%S"))
 
+    def is_shutdown_pending(self):
+        if self.shutdown_timer_start is None:
+            return False
+        else:
+            return True
+
     def stop_shutdown_timer(self, log=True):
         self.shutdown_timer_start = None
         if log:
@@ -138,6 +144,7 @@ class TimeKeeper(object):
         has been "True" since the timer started.
         """
         if self.state_change_timer_start is None:
+            # Timer not running
             return (True, False)
         else:
             is_time_up = self._has_time_elapsed(self.state_change_timer_start, STATE_CHANGE_DELAY_SEC)

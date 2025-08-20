@@ -88,10 +88,12 @@ def main(Output):
             continue
 
 
+        shutdown_pending = Timer.is_shutdown_pending()
         ready, first_time_ind = Timer.has_charge_delay_time_elapsed()
         # Enter new charging mode (if first_time_ind is True) based on current state.
-        # Or continue with current mode.
-        if ready:
+        # or continue with current mode.
+        # Don't enter if shutdown pending.
+        if ready and not shutdown_pending:
             if first_time_ind:
                 Output.print_debug("Charge-delay time has elapsed.")
 
