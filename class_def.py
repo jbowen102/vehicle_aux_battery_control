@@ -235,7 +235,7 @@ class Vehicle(object):
         if Controller().is_relay_off(self.keepalive_relay_num) and self.is_key_off():
             # If key off and enable not detected, could be because keepalive relay off too.
             # In this state, can't tell if enable switch on or off. Indeterminate reading.
-            self.Output.log_err("Keepalive relay off when expected to be held on during enable-switch state check.")
+            self.Output.print_err("Keepalive relay off when expected to be held on during enable-switch state check.")
             Controller().close_relay(self.keepalive_relay_num) # Should have been on already, but if not, turn on.
             time.sleep(0.2) # Give time for propagation delay
             return self.is_enable_switch_closed(log=log)
@@ -320,7 +320,7 @@ class Vehicle(object):
         return is_low
 
     def is_starter_batt_charged(self, log=False):
-        return (self.get_aux_oc_voltage_est(log=log) >= MAIN_V_CHARGED)
+        return (self.get_main_oc_voltage_est(log=log) >= MAIN_V_CHARGED)
 
     def does_starter_batt_need_charge(self, log=False):
         return not self.is_starter_batt_charged(log=log)

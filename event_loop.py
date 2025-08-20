@@ -43,6 +43,7 @@ def main():
         if Timer.has_shutdown_delay_elapsed(log=False):
             Timer.has_shutdown_delay_elapsed(log=True) # Call again just for logging
             Car.shut_down_controller()
+            break
 
 
         # Check for vehicle operating-state changes
@@ -98,7 +99,7 @@ def main():
             if Car.is_engine_running():
                 # Key ON, engine running.
                 if first_time_ind:
-                    Output.print_debug("State: Key ON, engine running.")
+                    Output.print_info("State: Key ON, engine running.")
                 if Car.is_aux_batt_full(log=first_time_ind):
                     Timer.start_charge_delay_timer("aux battery full already")
                 else:
@@ -107,27 +108,29 @@ def main():
             elif Car.is_acc_powered():
                 # Key in ACC or ON but engine off.
                 if first_time_ind:
-                    Output.print_debug("State: Key in ACC or ON but engine off.")
+                    Output.print_info("State: Key in ACC or ON but engine off.")
                 if Car.is_aux_batt_sufficient(log=first_time_ind):
                     Car.charge_starter_batt(log=first_time_ind)
                 else:
                     # If Li batt V low, power down RPi.
                     Car.shut_down_controller()
+                    break
                     # Will need to be manually turned back on either by key cycle or enable-switch cycle.
 
             elif Car.is_key_off():
                 # Key OFF
                 if first_time_ind:
-                    Output.print_debug("State: Key OFF.")
+                    Output.print_info("State: Key OFF.")
+
                 if Car.does_starter_batt_need_charge(log=first_time_ind) and Car.is_aux_batt_sufficient(log=first_time_ind):
                     # Keep charging while FLA batt needs charge and Li batt V sufficient.
                     Car.charge_starter_batt(log=first_time_ind)
-
                 else:
                     # If Li batt V low, power down RPi.
                     if first_time_ind:
-                        Output.print_debug("Li batt V low; initiating RPi shutdown.")
+                        Output.print_warn("Li batt V low; initiating RPi shutdown.")
                     Car.shut_down_controller()
+                    break
                     # Will turn back on next time key turned to ACC (assuming enable switch on)
 
 
