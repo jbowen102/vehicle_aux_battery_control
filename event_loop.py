@@ -47,42 +47,42 @@ def main():
 
         # Check for vehicle operating-state changes
         if Car.is_acc_powered() and not key_acc_powered:
-            Output.print_info("Key switched from OFF to ACC")
+            Output.print_info("Key switched from OFF to ACC.")
             key_acc_powered = True
             Car.stop_charging()
             Timer.start_charge_delay_timer("key OFF -> ACC")
             continue
 
         elif not Car.is_acc_powered() and key_acc_powered:
-            Output.print_info("Key switched from ACC to OFF")
+            Output.print_info("Key switched from ACC to OFF.")
             key_acc_powered = False
             # Okay to continue charging across this transition.
             Timer.start_charge_delay_timer("key ACC -> OFF")
             continue
 
         elif Car.is_key_on() and not key_on_pos:
-            Output.print_info("Key switched from ACC to ON")
+            Output.print_info("Key switched from ACC to ON.")
             key_on_pos = True
             Car.stop_charging()
             Timer.start_charge_delay_timer("key ACC -> ON")
             continue
 
         elif not Car.is_key_on() and key_on_pos:
-            Output.print_info("Key switched from ON to ACC")
+            Output.print_info("Key switched from ON to ACC.")
             key_on_pos = False
             Car.stop_charging()
             Timer.start_charge_delay_timer("key ON -> ACC")
             continue
 
         elif Car.is_engine_running() and not engine_on_state:
-            Output.print_info("Engine started")
+            Output.print_info("Engine started.")
             engine_on_state = True
             Car.stop_charging()
             Timer.start_charge_delay_timer("engine started")
             continue
 
         elif not Car.is_engine_running() and engine_on_state:
-            Output.print_info("Engine stopped")
+            Output.print_info("Engine stopped.")
             engine_on_state = False
             Car.stop_charging()
             continue
@@ -97,6 +97,8 @@ def main():
 
             if Car.is_engine_running():
                 # Key ON, engine running.
+                if first_time_ind:
+                    Output.print_debug("State: Key ON, engine running.")
                 if Car.is_aux_batt_full(log=first_time_ind):
                     Timer.start_charge_delay_timer("aux battery full already")
                 else:
@@ -104,6 +106,8 @@ def main():
 
             elif Car.is_acc_powered():
                 # Key in ACC or ON but engine off.
+                if first_time_ind:
+                    Output.print_debug("State: Key in ACC or ON but engine off.")
                 if Car.is_aux_batt_sufficient(log=first_time_ind):
                     Car.charge_starter_batt(log=first_time_ind)
                 else:
@@ -113,12 +117,16 @@ def main():
 
             elif Car.is_key_off():
                 # Key OFF
+                if first_time_ind:
+                    Output.print_debug("State: Key OFF.")
                 if Car.does_starter_batt_need_charge(log=first_time_ind) and Car.is_aux_batt_sufficient(log=first_time_ind):
                     # Keep charging while FLA batt needs charge and Li batt V sufficient.
                     Car.charge_starter_batt(log=first_time_ind)
 
                 else:
                     # If Li batt V low, power down RPi.
+                    if first_time_ind:
+                        Output.print_debug("Li batt V low; initiating RPi shutdown.")
                     Car.shut_down_controller()
                     # Will turn back on next time key turned to ACC (assuming enable switch on)
 

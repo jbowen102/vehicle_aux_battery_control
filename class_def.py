@@ -314,7 +314,7 @@ class Vehicle(object):
 
     def is_starter_batt_low(self, log=True):
         est_voltage = self.get_main_oc_voltage_est(log=log)
-        is_low = est_voltage <= MAIN_V_MIN
+        is_low = est_voltage < MAIN_V_MIN
         if log and is_low:
             self.Output.print_warn("Starter-batt voltage %.2fV below min allowed %.2fV." % (est_voltage, MAIN_V_MIN))
         return is_low
@@ -325,17 +325,22 @@ class Vehicle(object):
     def does_starter_batt_need_charge(self, log=False):
         return not self.is_starter_batt_charged(log=log)
 
-    def is_aux_batt_empty(self, log=True):
+    def is_aux_batt_empty(self, threshold_override=None, log=True):
+        if threshold_override is not None:
+            threshold = threshold_override
+        else:
+            threshold = AUX_V_MIN
+
         est_voltage = self.get_aux_oc_voltage_est(log=log)
-        is_low = est_voltage <= AUX_V_MIN
+        is_low = est_voltage < threshold
         if log and is_low:
             self.Output.print_warn("Aux-batt voltage %.2fV below min allowed %.2fV." % (est_voltage, AUX_V_MIN))
         elif log:
             self.Output.print_debug("Aux-batt voltage %.2fV sufficient (min allowed: %.2fV)." % (est_voltage, AUX_V_MIN))
         return is_low
 
-    def is_aux_batt_sufficient(self, log=False):
-        return not self.is_aux_batt_empty(log=log)
+    def is_aux_batt_sufficient(self, threshold_override=None, log=False):
+        return not self.is_aux_batt_empty(threshold_override=threshold_override, log=log)
 
     def is_aux_batt_full(self, log=False):
         est_voltage = self.get_aux_oc_voltage_est(log=log)
