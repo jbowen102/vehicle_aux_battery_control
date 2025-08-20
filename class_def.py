@@ -105,7 +105,7 @@ class TimeKeeper(object):
         """
         self.shutdown_timer_start = dt.datetime.now()
         if log:
-            self.Output.print_debug("RPi shutdown timer started at %s." % self.state_change_timer_start.strftime("%H:%M:%S"))
+            self.Output.print_debug("RPi shutdown timer started at %s." % self.shutdown_timer_start.strftime("%H:%M:%S"))
 
     def stop_shutdown_timer(self, log=True):
         self.shutdown_timer_start = None
@@ -192,10 +192,12 @@ class Controller(object):
         ah.relay[relay_num].off()
         assert self.is_relay_off(relay_num), "Tried to open relay %d but follow-up check failed." % relay_num
 
-    def shut_down(self):
-        # First open all relays
+    def open_all_relays(self):
         for relay_num in self.relay_list:
             self.open_relay(relay_num)
+
+    def shut_down(self):
+        self.open_all_relays()
         subprocess.run(["/usr/bin/sudo", "/sbin/shutdown", "-h", "now"],
                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         # https://learn.sparkfun.com/tutorials/raspberry-pi-safe-reboot-and-shutdown-button/all
@@ -334,9 +336,9 @@ class Vehicle(object):
         est_voltage = self.get_aux_oc_voltage_est(log=log)
         is_low = est_voltage < threshold
         if log and is_low:
-            self.Output.print_warn("Aux-batt voltage %.2fV below min allowed %.2fV." % (est_voltage, AUX_V_MIN))
+            self.Output.print_warn("Aux-batt voltage %.2fV below min allowed %.2fV." % (est_voltage, threshold))
         elif log:
-            self.Output.print_debug("Aux-batt voltage %.2fV sufficient (min allowed: %.2fV)." % (est_voltage, AUX_V_MIN))
+            self.Output.print_debug("Aux-batt voltage %.2fV sufficient (min allowed: %.2fV)." % (est_voltage, threshold))
         return is_low
 
     def is_aux_batt_sufficient(self, threshold_override=None, log=False):
@@ -356,7 +358,7 @@ class Vehicle(object):
                          % (self.get_aux_oc_voltage_est(log=False), AUX_V_MIN)
             self.Output.print_err(output_str)
             raise ChargeControlError(output_str)
-        if self.get_main_oc_voltage_est(log=log) > MAIN_V_MAX:
+        if self.get_main_oc_voltage_est(log=False) > MAIN_V_MAX:
             output_str = "Called Vehicle.charge_starter_batt(), " \
                          "but starter batt V (%.2fV) is over max threshold %.2fV." \
                          % (self.get_main_oc_voltage_est(log=False), MAIN_V_MAX)

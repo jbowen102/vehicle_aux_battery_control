@@ -4,10 +4,9 @@ from class_def import Vehicle, TimeKeeper, OutputHandler
 
 
 
-def main():
+def main(Output):
     time.sleep(5) # Give time for system to stabilize.
 
-    Output = OutputHandler()
     Car    = Vehicle(Output)
     Timer  = TimeKeeper(Output)
 
@@ -135,4 +134,12 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    Output = OutputHandler()
+    try:
+        main(Output)
+    except Exception as exception_text:
+        Controller().open_all_relays()
+        Output.print_err("Exception thrown in event loop:")
+        Output.print_err(exception_text)
+        # Output.print_warn("Shutting down controller.")
+        # Controller().shut_down()
