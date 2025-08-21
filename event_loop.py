@@ -85,6 +85,7 @@ def main(Output):
             Output.print_info("Engine stopped.")
             engine_on_state = False
             Car.stop_charging()
+            Timer.start_charge_delay_timer("engine stopped")
             continue
 
 

@@ -115,6 +115,7 @@ class TimeKeeper(object):
 
     def stop_shutdown_timer(self, log=True):
         self.shutdown_timer_start = None
+        Controller().turn_off_all_ind_leds()
         if log:
             self.Output.print_debug("RPi shutdown timer stopped.")
 
@@ -125,6 +126,7 @@ class TimeKeeper(object):
         if self.shutdown_timer_start is None:
             return False
         else:
+            Controller().toggle_red_led()
             is_time_up = self._has_time_elapsed(self.shutdown_timer_start, RPI_SHUTDOWN_DELAY_SEC)
             if is_time_up and log:
                 self.Output.print_debug("Shutdown-delay time has elapsed.")
@@ -168,6 +170,34 @@ class Controller(object):
         self.input_list = [0, 1, 2]
         self.relay_list = [0, 1, 2]
         self.analog_list = [0, 1, 2]
+        self.ind_led_list = [0, 1, 2]
+
+    def _light_led(self, led_num, brightness=None):
+        if brightness is None:
+            brightness = 1
+        ah.light[0].write(brightness)
+
+    def light_green_led(self, brightness=None):
+        self._light_led(0, brightness=brightness)
+
+    def light_blue_led(self, brightness=None):
+        self._light_led(1, brightness=brightness)
+
+    def light_red_led(self, brightness=None):
+        self._light_led(2, brightness=brightness)
+
+    def toggle_green_led(self):
+        ah.light[0].toggle()
+
+    def toggle_blue_led(self):
+        ah.light[1].toggle()
+
+    def toggle_red_led(self):
+        ah.light[2].toggle()
+
+    def turn_off_all_ind_leds(self):
+        for led_num in self.ind_led_list:
+            ah.light[led_num].off()
 
     def read_voltage(self, analog_pin_num):
         assert analog_pin_num in self.analog_list, "Called Controller.read_voltage() with invalid analog_pin_num %d" % analog_pin_num
@@ -204,6 +234,7 @@ class Controller(object):
             self.open_relay(relay_num)
 
     def shut_down(self):
+        self.turn_off_all_ind_leds()
         self.open_all_relays()
         subprocess.run(["/usr/bin/sudo", "/sbin/shutdown", "-h", "now"],
                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -222,6 +253,10 @@ class Vehicle(object):
 
         self.enable_sw_detect_pin = ENABLE_SWITCH_DETECT_PIN
         self.keepalive_relay_num = KEEPALIVE_RELAY
+
+        self.green_led_bright = 0
+        self.blue_led_bright = 0
+        self.red_led_bright = 0
 
         Controller().open_all_relays()
         Controller().close_relay(self.keepalive_relay_num) # Keep on whenever device is on.
@@ -251,8 +286,10 @@ class Vehicle(object):
             return self.is_enable_switch_closed(log=log)
 
         enable_detect = Controller().is_input_high(self.enable_sw_detect_pin)
-        if log:
-            self.Output.print_debug("Enable switch %s" % ("ON" if enable_detect else "OFF"))
+        if log and enable_detect:
+            self.Output.print_debug("Enable switch ON")
+        elif log:
+            self.Output.print_warn("Enable switch OFF")
         return enable_detect
 
     def get_main_voltage_raw(self, log=False):
@@ -375,6 +412,7 @@ class Vehicle(object):
 
         self.BattCharger.set_charge_direction_fwd()
         self.BattCharger.enable_charge()
+        self.roll_indicator_light(Controller().light_blue_led)
         if log:
             self.Output.print_info("Charging starter battery.")
 
@@ -391,12 +429,23 @@ class Vehicle(object):
 
         self.BattCharger.set_charge_direction_rev()
         self.BattCharger.enable_charge()
+        self.roll_indicator_light(Controller().light_green_led)
+
         if log:
             self.Output.print_info("Charging auxiliary battery.")
 
+    def roll_indicator_light(self, led_fxn):
+        """Increment brightness to produce glowing effect.
+        Pass LED function like Controller().light_blue_led
+        """
+        self.led_level = (self.led_level + 0.23) % 1
+        led_fxn(self.led_level)
+
     def stop_charging(self, log=True):
+        charging_was_active = self.BattCharger.is_charging()
         self.BattCharger.disable_charge()
-        if log:
+        Controller().turn_off_all_ind_leds()
+        if log and charging_was_active:
             self.Output.print_info("Stopped charging.")
 
     def shut_down_controller(self):
