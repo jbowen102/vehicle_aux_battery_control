@@ -126,7 +126,8 @@ class TimeKeeper(object):
         if self.shutdown_timer_start is None:
             return False
         else:
-            Controller().toggle_red_led()
+            if int(dt.datetime.now().strftime("%-S")) % 3 == 0:
+                Controller().toggle_red_led()
             is_time_up = self._has_time_elapsed(self.shutdown_timer_start, RPI_SHUTDOWN_DELAY_SEC)
             if is_time_up and log:
                 self.Output.print_debug("Shutdown-delay time has elapsed.")
@@ -148,7 +149,13 @@ class TimeKeeper(object):
         if self.state_change_timer_start is None:
             # Timer not running
             return (True, False)
+        elif self.is_shutdown_pending():
+            # Don't allow charge initiation while shutdown timer active.
+            return (False, False)
         else:
+            if int(dt.datetime.now().strftime("%-S")) % 2 == 0:
+                Controller().toggle_green_led()
+                Controller().light_blue_led(brightness=int(Controller().is_green_led_lit()))
             is_time_up = self._has_time_elapsed(self.state_change_timer_start, STATE_CHANGE_DELAY_SEC)
             if is_time_up:
                 self.state_change_timer_start = None
@@ -194,6 +201,15 @@ class Controller(object):
 
     def toggle_red_led(self):
         ah.light[2].toggle()
+
+    def is_green_led_lit(self):
+        return (ah.light[0].read() == 0)
+
+    def is_blue_led_lit(self):
+        return (ah.light[1].read() == 0)
+
+    def is_red_led_lit(self):
+        return (ah.light[2].read() == 0)
 
     def turn_off_all_ind_leds(self):
         for led_num in self.ind_led_list:
@@ -254,9 +270,7 @@ class Vehicle(object):
         self.enable_sw_detect_pin = ENABLE_SWITCH_DETECT_PIN
         self.keepalive_relay_num = KEEPALIVE_RELAY
 
-        self.green_led_bright = 0
-        self.blue_led_bright = 0
-        self.red_led_bright = 0
+        self.led_level = 0
 
         Controller().open_all_relays()
         Controller().close_relay(self.keepalive_relay_num) # Keep on whenever device is on.
@@ -438,8 +452,10 @@ class Vehicle(object):
         """Increment brightness to produce glowing effect.
         Pass LED function like Controller().light_blue_led
         """
-        self.led_level = (self.led_level + 0.23) % 1
-        led_fxn(self.led_level)
+        # self.led_level = int(dt.datetime.now().strftime("%f")[:2])/100
+        if int(dt.datetime.now().strftime("%f")[0]) % 3 == 0:
+            self.led_level = (self.led_level + 0.23) % 1
+            led_fxn(self.led_level)
 
     def stop_charging(self, log=True):
         charging_was_active = self.BattCharger.is_charging()
