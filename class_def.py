@@ -286,7 +286,7 @@ class Vehicle(object):
         return not self.is_acc_powered()
 
     def is_engine_running(self):
-        return self.get_main_voltage_raw(log=False) >= ALTERNATOR_OUTPUT_V_MIN
+        return (self.is_key_on() and (self.get_main_voltage_raw(log=False) >= ALTERNATOR_OUTPUT_V_MIN))
 
     def is_enable_switch_closed(self, log=False):
         # Either ACC power present or keepalive relay should always be powering switch.
@@ -301,7 +301,7 @@ class Vehicle(object):
 
         enable_detect = Controller().is_input_high(self.enable_sw_detect_pin)
         if log and enable_detect:
-            self.Output.print_debug("Enable switch ON")
+            self.Output.print_info("Enable switch ON")
         elif log:
             self.Output.print_warn("Enable switch OFF")
         return enable_detect

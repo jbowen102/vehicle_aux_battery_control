@@ -1,4 +1,5 @@
 import time
+import traceback
 
 from class_def import Vehicle, Controller, TimeKeeper, OutputHandler
 
@@ -75,14 +76,14 @@ def main(Output):
             continue
 
         elif Car.is_engine_running() and not engine_on_state:
-            Output.print_info("Engine started.")
+            Output.print_info("Engine started. (main voltage raw: %.2f)" % Car.get_main_voltage_raw())
             engine_on_state = True
             Car.stop_charging()
             Timer.start_charge_delay_timer("engine started")
             continue
 
         elif not Car.is_engine_running() and engine_on_state:
-            Output.print_info("Engine stopped.")
+            Output.print_info("Engine stopped (main voltage raw: %.2f)" % Car.get_main_voltage_raw())
             engine_on_state = False
             Car.stop_charging()
             Timer.start_charge_delay_timer("engine stopped")
@@ -124,16 +125,22 @@ def main(Output):
                 if first_time_ind:
                     Output.print_info("State: Key OFF.")
 
-                if Car.does_starter_batt_need_charge(log=first_time_ind) and Car.is_aux_batt_sufficient(log=first_time_ind):
-                    # Keep charging while FLA batt needs charge and Li batt V sufficient.
-                    Car.charge_starter_batt(log=first_time_ind)
-                else:
+                # if not Car.is_aux_batt_sufficient(log=first_time_ind):
+                if not Car.is_aux_batt_sufficient(threshold_override=13.1, log=first_time_ind): # TEMP
                     # If Li batt V low, power down RPi.
                     if first_time_ind:
                         Output.print_warn("Li batt V low; initiating RPi shutdown.")
                     Car.shut_down_controller()
                     break
                     # Will turn back on next time key turned to ACC (assuming enable switch on)
+                # elif not Car.does_starter_batt_need_charge(log=first_time_ind):
+                #     if first_time_ind:
+                #         Output.print_warn("Starter batt fully charged; initiating RPi shutdown.")
+                #     Car.shut_down_controller()
+                #     break
+                else:
+                    # Keep charging while FLA batt needs charge and Li batt V sufficient.
+                    Car.charge_starter_batt(log=first_time_ind)
 
 
 if __name__ == "__main__":
