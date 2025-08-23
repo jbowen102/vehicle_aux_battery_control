@@ -153,12 +153,13 @@ class TimeKeeper(object):
             # Don't allow charge initiation while shutdown timer active.
             return (False, False)
         else:
-            if int(dt.datetime.now().strftime("%-S")) % 2 == 0:
-                Controller().toggle_green_led()
-                Controller().light_blue_led(brightness=int(Controller().is_green_led_lit()))
             is_time_up = self._has_time_elapsed(self.state_change_timer_start, STATE_CHANGE_DELAY_SEC)
             if is_time_up:
                 self.state_change_timer_start = None
+                Controller().turn_off_all_ind_leds()
+            elif int(dt.datetime.now().strftime("%-S")) % 2 == 0:
+                Controller().toggle_green_led()
+                Controller().light_blue_led(brightness=int(Controller().is_green_led_lit()))
             return (is_time_up, is_time_up)
 
     def _get_time_elapsed(self, start_time):
@@ -182,7 +183,7 @@ class Controller(object):
     def _light_led(self, led_num, brightness=None):
         if brightness is None:
             brightness = 1
-        ah.light[0].write(brightness)
+        ah.light[led_num].write(brightness)
 
     def light_green_led(self, brightness=None):
         self._light_led(0, brightness=brightness)
