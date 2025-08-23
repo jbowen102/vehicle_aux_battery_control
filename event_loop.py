@@ -1,15 +1,9 @@
+import os
 import time
-import sys, signal
+import signal
 import traceback
 
 from class_def import Vehicle, Controller, TimeKeeper, OutputHandler
-
-
-# Pipe kill signal from Linux to this Python script to allow gracefully exit.
-def sigterm_handler(_signo, _stack_frame):
-    sys.exit(0)
-signal.signal(signal.SIGTERM, sigterm_handler)
-# https://stackoverflow.com/questions/18499497/how-to-process-sigterm-signal-gracefully
 
 
 def main(Output):
@@ -151,7 +145,9 @@ def main(Output):
 
 
 if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, Controller().sigterm_handler)
     Output = OutputHandler()
+    Output.print_temp("PID: %d" % os.getpid())
     try:
         main(Output)
     except KeyboardInterrupt:
@@ -162,7 +158,7 @@ if __name__ == "__main__":
         Output.print_err(error_message)
         Output.print_err("")
     except:
-        Output.print_err("Program killed by OS.")
+        Output.print_err("Program killed by OS (PID %d)." % os.getpid())
     finally:
         Controller().open_all_relays()
         # Output.print_warn("Shutting down controller.")

@@ -1,5 +1,6 @@
 import os
 import time
+import sys
 import subprocess
 import datetime as dt
 from colorama import Style, Fore, Back
@@ -256,6 +257,12 @@ class Controller(object):
         subprocess.run(["/usr/bin/sudo", "/sbin/shutdown", "-h", "now"],
                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         # https://learn.sparkfun.com/tutorials/raspberry-pi-safe-reboot-and-shutdown-button/all
+
+    def sigterm_handler(self, _signo, _stack_frame):
+        """Pipe kill signal from Linux to this Python script to allow gracefully exit.
+        """
+        sys.exit(0)
+        # https://stackoverflow.com/questions/18499497/how-to-process-sigterm-signal-gracefully
 
 
 class Vehicle(object):
