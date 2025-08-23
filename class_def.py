@@ -48,9 +48,8 @@ class OutputHandler(object):
         self._create_log_file()
 
     def _create_log_file(self):
-        timestamp = dt.datetime.now().strftime("%Y%m%d")
-        log_filename = "%s.log" % timestamp
-        self.log_filepath = os.path.join(LOG_DIR, log_filename)
+        datestamp = dt.datetime.now().strftime("%Y%m%d")
+        self.log_filepath = os.path.join(LOG_DIR, "%s.log" % datestamp)
         if not os.path.exists(self.log_filepath):
             # If multiple runs on same day, appends to existing file.
             # If program runs over midnight, after-midnight events will be in previous day's logs.
@@ -58,6 +57,7 @@ class OutputHandler(object):
                 pass
 
     def _add_to_log_file(self, print_str):
+        self._create_log_file() # Ensures if date changes while program running, new log entries are written to next day's log.
         with open(self.log_filepath, "a") as log_file:
             log_file.write("%s\n" % print_str)
 
