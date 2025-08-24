@@ -518,8 +518,12 @@ class Vehicle(object):
             self.Output.print_warn(output_str)
 
         self.BattCharger.set_charge_direction_rev()
-        self.BattCharger.enable_charge()
-        self.roll_indicator_light(Controller().light_green_led)
+
+        # # TEMP disabled while DPDT relay not yet installed.
+        # self.BattCharger.enable_charge()
+        # self.roll_indicator_light(Controller().light_green_led)
+        Controller().toggle_green_led()
+        # # TEMP
 
         if log:
             self.Output.print_info("Charging auxiliary battery.")
