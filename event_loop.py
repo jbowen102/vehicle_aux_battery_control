@@ -147,18 +147,14 @@ def main(Output):
 if __name__ == "__main__":
     signal.signal(signal.SIGTERM, Controller().sigterm_handler)
     Output = OutputHandler()
-    Output.print_temp("PID: %d" % os.getpid())
     try:
         main(Output)
     except KeyboardInterrupt:
-        Output.print_err("Keyboard interrupt.")
+        Output.print_shutdown("Keyboard interrupt.")
     except Exception:
-        error_message = traceback.format_exc()
-        Output.print_err("Exception thrown in event loop:")
-        Output.print_err(error_message)
-        Output.print_err("")
+        Output.print_shutdown(traceback.format_exc())
     except:
-        Output.print_err("Program killed by OS (PID %d)." % os.getpid())
+        Output.print_shutdown("Program killed by OS.")
     finally:
         Controller().open_all_relays()
         # Output.print_warn("Shutting down controller.")

@@ -46,6 +46,7 @@ class SystemVoltageError(Exception):
 class OutputHandler(object):
     def __init__(self):
         self._create_log_file()
+        self._print_startup()
 
     def _create_log_file(self):
         datestamp = dt.datetime.now().strftime("%Y%m%d")
@@ -78,6 +79,10 @@ class OutputHandler(object):
             self._add_to_log_file(log_str)
             return None
 
+    def _print_startup(self):
+        self._add_to_log_file("")
+        self._add_to_log_file("-"*23 + " PROGRAM START [PID: %d] " % os.getpid() + "-"*20)
+
     def print_temp(self, print_str, prompt_user=False):
         return self._print_and_log("[TEMP]  %s" % print_str, Fore.CYAN, prompt=prompt_user)
 
@@ -92,6 +97,10 @@ class OutputHandler(object):
 
     def print_err(self, print_str, prompt_user=False):
         return self._print_and_log("[ERROR] %s" % print_str, Fore.RED, prompt=prompt_user)
+
+    def print_shutdown(self, error_msg):
+        self.print_err(error_msg)
+        self.print_debug("[PID %d killed]" % os.getpid())
 
 
 
