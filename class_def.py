@@ -326,70 +326,129 @@ class Vehicle(object):
             self.Output.print_debug("Aux voltage (raw): %.2fV" % voltage)
         return voltage
 
-    def get_main_oc_voltage_est(self, log=False):
-        # Needs hysteresis to avoid bang-bang ctrl
+    def get_main_voltage(self, log=False):
+        elevated = False
         if self.is_engine_running():
-            return 13
-            # Too hard to estimate
+            # Currently being charged, elevating voltage
+            elevated = True
             if log:
-                self.Output.print_warn("Engine running during main open-circuit voltage estimation.")
-        elif self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_rev():
-            # Currently charging aux battery
-            offset = 0.5
-            # Offset depends on charge current, but no way to infer that currently.
-            # TODO experimentally determine more accurate value.
-            # Should this be reworked to automatically shut down charging, wait and then measure?
-            if log:
-                self.Output.print_warn("Charging aux battery during main open-circuit voltage estimation.")
+                self.Output.print_warn("Engine running during FLA battery-voltage reading (elevating value).")
         elif self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_fwd():
-            # Currently being charged, elevating voltage
-            offset = -0.5
-            # Offset depends on charge current, but no way to infer that currently.
-            # TODO experimentally determine more accurate value.
-            # Should this be reworked to automatically shut down charging, wait and then measure?
+            # Currently being charged, elevating FLA voltage
+            elevated = True
             if log:
-                self.Output.print_warn("Main battery being charged by aux batt during main open-circuit voltage estimation.")
-        else:
-            offset = 0
-
-        voltage_est = self.get_main_voltage_raw(log=log) + offset
-        if log:
-            self.Output.print_debug("Main open-circuit voltage est: %.2fV (includes %.1fV offset)" % (voltage_est, offset))
-        return voltage_est
-
-    def get_aux_oc_voltage_est(self, log=False):
-        # Needs hysteresis to avoid bang-bang ctrl
-        if self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_fwd():
-            # Currently charging starter battery
-            offset = 0.5
-            # TODO experimentally determine more accurate value.
-            # Offset depends on charge current, but no way to infer that currently.
-            if log:
-                self.Output.print_warn("Charging starter battery during aux-batt open-circuit voltage estimation.")
+                self.Output.print_warn("Starter battery being charged (by aux batt) during FLA battery-voltage reading (elevating value).")
         elif self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_rev():
-            # Currently being charged, elevating voltage
-            offset = -0.5
-            # TODO experimentally determine more accurate value.
-            # Offset depends on charge current, but no way to infer that currently.
-            if log:
-                self.Output.print_warn("Aux battery being charged during aux-batt open-circuit voltage estimation.")
-        else:
-            offset = 0
+            # Currently charging aux battery, depressing main voltage.
+            # This should only happen while engine running (and so be caught above)
+            output_str = "Aux batt being charged w/o engine running."
+            self.Output.print_err(output_str)
+            raise ChargeControlError(output_str)
 
-        voltage_est = self.get_aux_voltage_raw(log=log) + offset
+        voltage_est = self.get_main_voltage_raw(log=log)
         if log:
-            self.Output.print_debug("Aux open-circuit voltage est: %.2fV (includes %.1fV offset)" % (voltage_est, offset))
+            self.Output.print_debug("FLA battery-voltage reading: %.2fV%s."
+                                    % (voltage_est, (" (assumed elevated)" if elevated else "")))
         return voltage_est
+
+        # # INACTIVE (needs further dev):
+        # # Needs hysteresis to avoid bang-bang ctrl
+        # if self.is_engine_running():
+        #     if log:
+        #         self.Output.print_warn("Engine running during main open-circuit voltage estimation.")
+        #     # Too hard to estimate
+        #     if self.get_main_voltage_raw >= 13:
+        #         voltage_est = 13
+        #         if log:
+        #             self.Output.print_debug("Main open-circuit voltage est: %.2fV (pegged while engine running)" % voltage_est)
+        #     else:
+        #         voltage_est = 12.5
+        #         if log:
+        #             self.Output.print_debug("Main open-circuit voltage est: %.2fV (pegged while engine running)" % voltage_est)
+
+        # else:
+        #     if self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_rev():
+        #         # Currently charging aux battery
+        #         offset = 0.5
+        #         # Offset depends on charge current, but no way to infer that currently.
+        #         # TODO experimentally determine more accurate value.
+        #         # Should this be reworked to automatically shut down charging, wait and then measure?
+        #         if log:
+        #             self.Output.print_warn("Charging aux battery during main open-circuit voltage estimation.")
+        #     elif self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_fwd():
+        #         # Currently being charged, elevating voltage
+        #         offset = -0.5
+        #         # Offset depends on charge current, but no way to infer that currently.
+        #         # TODO experimentally determine more accurate value.
+        #         # Should this be reworked to automatically shut down charging, wait and then measure?
+        #         if log:
+        #             self.Output.print_warn("Main battery being charged by aux batt during main open-circuit voltage estimation.")
+        #     else:
+        #         offset = 0
+        #     voltage_est = self.get_main_voltage_raw(log=log) + offset
+
+        #     if log:
+        #         self.Output.print_debug("Main open-circuit voltage est: %.2fV (includes %.1fV offset)" % (voltage_est, offset))
+        # return voltage_est
+
+    def get_aux_voltage(self, log=False):
+        elevated = False
+        depressed = False
+        if self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_fwd():
+            # Currently charging starter battery, depressing aux-batt voltage.
+            depressed = True
+            if log:
+                self.Output.print_warn("Aux batt charging starter battery during Li battery-voltage reading (depressing value).")
+        elif self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_rev():
+            # Currently being charged, elevating aux-batt voltage.
+            if log:
+                self.Output.print_warn("Aux batt being charged during Li battery-voltage reading (elevating value).")
+
+        if elevated and depressed:
+            output_str = "Vehicle.get_aux_voltage() indicating voltage both elevated and depressed (mutually exclusive)."
+            self.Output.print_err(output_str)
+            raise SystemVoltageError(output_str)
+
+        voltage_est = self.get_aux_voltage_raw(log=log)
+        if log:
+            self.Output.print_debug("Li battery-voltage reading: %.2fV%s."
+                                    % (voltage_est, (" (assumed elevated)" if elevated
+                                               else (" (assumed depressed)" if depressed else ""))))
+        return voltage_est
+
+        # # INACTIVE (needs further dev):
+        # # Needs hysteresis to avoid bang-bang ctrl
+        # if self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_fwd():
+        #     # Currently charging starter battery
+        #     offset = 0.5
+        #     # TODO experimentally determine more accurate value.
+        #     # Offset depends on charge current, but no way to infer that currently.
+        #     if log:
+        #         self.Output.print_warn("Charging starter battery during aux-batt open-circuit voltage estimation.")
+        # elif self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_rev():
+        #     # Currently being charged, elevating voltage
+        #     offset = -0.5
+        #     # TODO experimentally determine more accurate value.
+        #     # Offset depends on charge current, but no way to infer that currently.
+        #     if log:
+        #         self.Output.print_warn("Aux battery being charged during aux-batt open-circuit voltage estimation.")
+        # else:
+        #     offset = 0
+
+        # voltage_est = self.get_aux_voltage_raw(log=log) + offset
+        # if log:
+        #     self.Output.print_debug("Aux open-circuit voltage est: %.2fV (includes %.1fV offset)" % (voltage_est, offset))
+        # return voltage_est
 
     def is_starter_batt_low(self, log=True):
-        est_voltage = self.get_main_oc_voltage_est(log=log)
+        est_voltage = self.get_main_voltage(log=log)
         is_low = est_voltage < MAIN_V_MIN
         if log and is_low:
             self.Output.print_warn("Starter-batt voltage %.2fV below min allowed %.2fV." % (est_voltage, MAIN_V_MIN))
         return is_low
 
     def is_starter_batt_charged(self, log=False):
-        return (self.get_main_oc_voltage_est(log=log) >= MAIN_V_CHARGED)
+        return (self.get_main_voltage(log=log) >= MAIN_V_CHARGED)
 
     def does_starter_batt_need_charge(self, log=False):
         return not self.is_starter_batt_charged(log=log)
@@ -400,7 +459,7 @@ class Vehicle(object):
         else:
             threshold = AUX_V_MIN
 
-        est_voltage = self.get_aux_oc_voltage_est(log=log)
+        est_voltage = self.get_aux_voltage(log=log)
         is_low = est_voltage < threshold
         if log and is_low:
             self.Output.print_warn("Aux-batt voltage %.2fV below min allowed %.2fV." % (est_voltage, threshold))
@@ -412,7 +471,7 @@ class Vehicle(object):
         return not self.is_aux_batt_empty(threshold_override=threshold_override, log=log)
 
     def is_aux_batt_full(self, log=False):
-        est_voltage = self.get_aux_oc_voltage_est(log=log)
+        est_voltage = self.get_aux_voltage(log=log)
         is_full = est_voltage >= AUX_V_MAX
         if log and is_full:
             self.Output.print_debug("Aux batt full (%.2fV)" % est_voltage)
@@ -422,13 +481,13 @@ class Vehicle(object):
         if self.is_aux_batt_empty(log=False):
             output_str = "Called Vehicle.charge_starter_batt(), " \
                          "but aux batt V (%.2fV) is below min threshold %.2fV." \
-                         % (self.get_aux_oc_voltage_est(log=False), AUX_V_MIN)
+                         % (self.get_aux_voltage(log=False), AUX_V_MIN)
             self.Output.print_err(output_str)
             raise ChargeControlError(output_str)
-        if self.get_main_oc_voltage_est(log=False) > MAIN_V_MAX:
+        if self.get_main_voltage(log=False) > MAIN_V_MAX:
             output_str = "Called Vehicle.charge_starter_batt(), " \
                          "but starter batt V (%.2fV) is over max threshold %.2fV." \
-                         % (self.get_main_oc_voltage_est(log=False), MAIN_V_MAX)
+                         % (self.get_main_voltage(log=False), MAIN_V_MAX)
             self.Output.print_err(output_str)
             raise SystemVoltageError(output_str)
 
@@ -446,7 +505,7 @@ class Vehicle(object):
         if self.is_aux_batt_full(log=False):
             output_str = "Called Vehicle.charge_aux_batt(), " \
                          "and aux batt already full (%.2fV > %.2fV." \
-                         % (self.get_aux_oc_voltage_est(log=False), AUX_V_MAX)
+                         % (self.get_aux_voltage(log=False), AUX_V_MAX)
             self.Output.print_warn(output_str)
 
         self.BattCharger.set_charge_direction_rev()
