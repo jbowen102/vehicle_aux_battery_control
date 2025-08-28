@@ -12,7 +12,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_DIR = os.path.join(SCRIPT_DIR, "logs")
 
 
-ALTERNATOR_OUTPUT_V_MIN = 13
+ALTERNATOR_OUTPUT_V_MIN = 12.7
 MAIN_V_MAX = 14.5
 MAIN_V_CHARGED = 12.6
 MAIN_V_MIN = 11.5
@@ -502,18 +502,23 @@ class Vehicle(object):
 
         self.BattCharger.set_charge_direction_fwd()
         self.BattCharger.enable_charge()
-        self.roll_indicator_light(Controller().light_blue_led)
+        # self.roll_indicator_light(Controller().light_blue_led)
+        Controller().toggle_blue_led()
         if log:
             self.Output.print_info("Charging starter battery.")
 
     def charge_aux_batt(self, log=False):
-        if not self.is_engine_running():
-            output_str = "Called Vehicle.charge_aux_batt(), but engine not running."
+        if not self.is_starter_batt_charged():
+            # Only want to charge with engine running. Sometimes alternator output
+            # varies to where this was incorrectly inferring engine off momentarily
+            # and shutting program down. Switched to just making sure battery charged.
+            main_voltage = self.get_main_voltage(log=True)
+            output_str = "Called Vehicle.charge_aux_batt(), but starter battery insufficiently charged (%.2fV)." % main_voltage
             self.Output.print_err(output_str)
             raise ChargeControlError(output_str)
         if self.is_aux_batt_full(log=False):
             output_str = "Called Vehicle.charge_aux_batt(), " \
-                         "and aux batt already full (%.2fV > %.2fV." \
+                         "and aux batt already full (%.2fV > %.2fV max." \
                          % (self.get_aux_voltage(log=False), AUX_V_MAX)
             self.Output.print_warn(output_str)
 
