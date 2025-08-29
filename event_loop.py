@@ -3,14 +3,17 @@ import time
 import signal
 import traceback
 
+import automationhat as ah
+
 from class_def import Vehicle, Controller, TimeKeeper, OutputHandler
 
 
 def main(Output):
-    time.sleep(5) # Give time for system to stabilize.
+    time.sleep(4)                # Give time for system to stabilize.
 
     Car    = Vehicle(Output)
     Timer  = TimeKeeper(Output)
+    time.sleep(1)                # Give time for automationhat inputs to stabilize.
 
     key_acc_powered   = Car.is_acc_powered()
     key_on_pos        = Car.is_key_on()
@@ -124,6 +127,7 @@ def main(Output):
                     Car.charge_starter_batt(log=first_time_ind)
                 else:
                     # If Li batt V low, power down RPi.
+                    Car.is_aux_batt_sufficient(log=True) # Call again just for logging
                     Car.shut_down_controller()
                     break
                     # Will need to be manually turned back on either by key cycle or enable-switch cycle.
@@ -137,7 +141,7 @@ def main(Output):
                 temp_threshold = 13
                 if not Car.is_aux_batt_sufficient(threshold_override=temp_threshold, log=False):
                     # If Li batt V low, power down RPi.
-                    Car.is_aux_batt_sufficient(threshold_override=temp_threshold, log=True) # just for print
+                    Car.is_aux_batt_sufficient(threshold_override=temp_threshold, log=True) # Call again just for logging
                     Output.print_warn("Li batt V low (%.2f); initiating RPi shutdown." % Car.get_aux_voltage(log=False))
                     Car.shut_down_controller()
                     break
@@ -153,10 +157,14 @@ def main(Output):
 
 
 if __name__ == "__main__":
-    signal.signal(signal.SIGTERM, Controller().sigterm_handler)
+    signal.signal(signal.SIGTERM, Controller().sigterm_handler) # method that turns off LEDs and relays and exits Python script
     Output = OutputHandler()
     try:
         main(Output)
+    except TimeoutError:
+        # Thrown by automationhat - "Timed out waiting for conversion."
+        # Not sure what's causing it yet. Doesn't usually persist across reboot though.
+        Controller().reboot()
     except KeyboardInterrupt:
         Output.print_shutdown("Keyboard interrupt.")
     except Exception:
@@ -164,6 +172,6 @@ if __name__ == "__main__":
     except:
         Output.print_shutdown("Program killed by OS.")
     finally:
-        Controller().open_all_relays()
+        Controller().open_all_relays() # Does this run when program shut down by SIGTERM?
         # Output.print_warn("Shutting down controller.")
         # Controller().shut_down()

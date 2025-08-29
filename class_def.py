@@ -260,16 +260,25 @@ class Controller(object):
         for relay_num in self.relay_list:
             self.open_relay(relay_num)
 
+    def reboot(self):
+        self.turn_off_all_ind_leds()
+        self.open_all_relays()
+        subprocess.run(["/usr/bin/sudo", "usr/sbin/reboot"],
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        # https://learn.sparkfun.com/tutorials/raspberry-pi-safe-reboot-and-shutdown-button/all
+
     def shut_down(self):
         self.turn_off_all_ind_leds()
         self.open_all_relays()
-        subprocess.run(["/usr/bin/sudo", "/sbin/shutdown", "-h", "now"],
+        subprocess.run(["/usr/bin/sudo", "usr/sbin/shutdown", "-h", "now"],
                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         # https://learn.sparkfun.com/tutorials/raspberry-pi-safe-reboot-and-shutdown-button/all
 
     def sigterm_handler(self, _signo, _stack_frame):
-        """Pipe kill signal from Linux to this Python script to allow gracefully exit.
+        """Pipe kill signal from Linux to this Python script to allow graceful exit.
         """
+        self.turn_off_all_ind_leds()
+        self.open_all_relays()
         sys.exit(0)
         # https://stackoverflow.com/questions/18499497/how-to-process-sigterm-signal-gracefully
 
