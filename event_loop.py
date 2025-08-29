@@ -25,6 +25,12 @@ def main(Output):
     Timer.start_charge_delay_timer("program startup") # Treat RPi startup triggering as a state change.
 
     while True:
+        if Timer.is_sys_time_valid():
+            Output.assert_time_valid()
+        elif Timer.get_seconds % 59 == 0:
+            # Re-check every minute. Introduces 2s delay but only outputs if successful.
+            Timer.wait_for_ntp_update(2, log=False)
+
         # Check for enable-switch state change
         if not Car.is_enable_switch_closed() and sys_enabled_state:
             # Switch opened for the first time.
