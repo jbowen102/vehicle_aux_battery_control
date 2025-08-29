@@ -15,6 +15,7 @@ TEST*
 
 # Project-specific
 logs/
+network_names.py
 
 
 # Ignore any file/dir/symlink starting w/ these names:

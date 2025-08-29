@@ -8,6 +8,8 @@ from colorama import Style, Fore, Back
 
 import automationhat as ah
 
+from network_names import stored_ssid_mapping_dict     # local file
+
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_DIR = os.path.join(SCRIPT_DIR, "logs")
@@ -131,6 +133,13 @@ class TimeKeeper(object):
         self.valid_sys_time = False
         self.wait_for_ntp_update(ntp_wait_time, log=True)
 
+    def get_network_name(self):
+        """Uses local file w/ SSID->name dict. Returns name of network as string.
+        """
+        result = subprocess.run("iwgetid -r", capture_output=True, text=True, shell=True)
+        network_ssid = result.stdout.strip()
+        return stored_ssid_mapping_dict.get(network_ssid)
+
     def wait_for_ntp_update(self, wait_time, log=False):
         # Establish whether OS has correct time before starting logging.
         if log:
@@ -153,7 +162,7 @@ class TimeKeeper(object):
         else:
             self.valid_sys_time = True
             self.Output.assert_time_valid()
-            self.Output.print_debug("Successfully reached NTP server.")
+            self.Output.print_debug("Successfully reached NTP server. Connected to %s." % self.get_network_name())
 
         Controller().light_red_led(0)
         Controller().light_blue_led(0)

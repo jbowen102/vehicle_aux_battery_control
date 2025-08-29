@@ -3,8 +3,6 @@ import time
 import signal
 import traceback
 
-import automationhat as ah
-
 from class_def import Vehicle, Controller, TimeKeeper, OutputHandler
 
 
