@@ -3,6 +3,7 @@ import time
 import sys
 import subprocess
 import datetime as dt
+import ntplib
 from colorama import Style, Fore, Back
 
 import automationhat as ah
@@ -45,11 +46,29 @@ class SystemVoltageError(Exception):
 
 class OutputHandler(object):
     def __init__(self):
+        self.time_valid = False
         self._create_log_file()
         self._print_startup()
 
+    def assert_time_valid(self):
+        self.time_valid = True
+
+    def _get_datestamp(self, ntp_reqd=True):
+        if self.time_valid or not ntp_reqd:
+            return dt.datetime.now().strftime("%Y%m%d")
+        else:
+            return "--------"
+
+    def _get_timestamp(self):
+        if self.time_valid:
+            return dt.datetime.now().strftime("%Y%m%dT%H%M%S")
+        else:
+            return "---------" + dt.datetime.now().strftime("%H%M%S")
+            # Keep incorrect time displayed because relative differences still useful in log.
+
     def _create_log_file(self):
-        datestamp = dt.datetime.now().strftime("%Y%m%d")
+        datestamp = self._get_datestamp(ntp_reqd=False)
+        # If time not yet updated via NTP, this will just append to most recent log - okay
         self.log_filepath = os.path.join(LOG_DIR, "%s.log" % datestamp)
         if not os.path.exists(self.log_filepath):
             # If multiple runs on same day, appends to existing file.
@@ -63,7 +82,7 @@ class OutputHandler(object):
             log_file.write("%s\n" % print_str)
 
     def _print_and_log(self, message, color=Fore.WHITE, style=Style.BRIGHT, prompt=False):
-        timestamp = dt.datetime.now().strftime("%Y%m%dT%H%M%S")
+        timestamp = self._get_timestamp()
         print_str = Style.NORMAL + timestamp + " " + color + style + message
         log_str = timestamp + " " + message
 
@@ -103,12 +122,49 @@ class OutputHandler(object):
         self.print_debug("[PID %d killed]" % os.getpid())
 
 
-
 class TimeKeeper(object):
-    def __init__(self, Output):
+    def __init__(self, Output, ntp_wait_time):
         self.Output = Output
         self.state_change_timer_start = None
         self.shutdown_timer_start = None
+
+        self.valid_sys_time = False
+        self.wait_for_ntp_update(ntp_wait_time, log=True)
+
+    def wait_for_ntp_update(self, wait_time, log=False):
+        # Establish whether OS has correct time before starting logging.
+        if log:
+            self.Output.print_debug("Waiting for sys time to update from NTP server...")
+        Controller().light_red_led(0.5)
+        Controller().light_blue_led(0.5)
+
+        try:
+            ntplib.NTPClient().request("pool.ntp.org", timeout=wait_time)
+            # https://stackoverflow.com/a/12664736
+            # Assumes if Python script accesses successfully, OS will too.
+            # Check state in OS:
+            # timedatectl show --property=NTPSynchronized
+            # returns "NTPSynchronized=yes"
+        except ntplib.NTPException:
+            # Assume no internet.
+            self.valid_sys_time = False
+            if log:
+                self.Output.print_warn("FAILED to reach NTP server.")
+        else:
+            self.valid_sys_time = True
+            self.Output.assert_time_valid()
+            self.Output.print_debug("Successfully reached NTP server.")
+
+        Controller().light_red_led(0)
+        Controller().light_blue_led(0)
+
+    def is_sys_time_valid(self):
+        return self.valid_sys_time
+
+    def get_seconds(self):
+        """Returns seconds part of current time as int.
+        """
+        return int(dt.datetime.now().strftime("%-S"))
 
     def start_shutdown_timer(self, log=True):
         """If called while timer already running, timer restarts.
@@ -136,7 +192,7 @@ class TimeKeeper(object):
         if self.shutdown_timer_start is None:
             return False
         else:
-            if int(dt.datetime.now().strftime("%-S")) % 3 == 0:
+            if self.get_seconds() % 3 == 0:
                 Controller().toggle_red_led()
             is_time_up = self._has_time_elapsed(self.shutdown_timer_start, RPI_SHUTDOWN_DELAY_SEC)
             if is_time_up and log:
@@ -167,7 +223,7 @@ class TimeKeeper(object):
             if is_time_up:
                 self.state_change_timer_start = None
                 Controller().turn_off_all_ind_leds()
-            elif int(dt.datetime.now().strftime("%-S")) % 2 == 0:
+            elif self.get_seconds() % 2 == 0:
                 Controller().toggle_green_led()
                 Controller().light_blue_led(brightness=int(Controller().is_green_led_lit()))
             return (is_time_up, is_time_up)
@@ -265,7 +321,6 @@ class Controller(object):
         self.open_all_relays()
         subprocess.run(["/usr/bin/sudo", "usr/sbin/reboot"],
                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        # https://learn.sparkfun.com/tutorials/raspberry-pi-safe-reboot-and-shutdown-button/all
 
     def shut_down(self):
         self.turn_off_all_ind_leds()

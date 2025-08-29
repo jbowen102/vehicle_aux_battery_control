@@ -10,10 +10,9 @@ from class_def import Vehicle, Controller, TimeKeeper, OutputHandler
 
 def main(Output):
     time.sleep(4)                # Give time for system to stabilize.
-
     Car    = Vehicle(Output)
-    Timer  = TimeKeeper(Output)
     time.sleep(1)                # Give time for automationhat inputs to stabilize.
+    Timer  = TimeKeeper(Output, ntp_wait_time=20)
 
     key_acc_powered   = Car.is_acc_powered()
     key_on_pos        = Car.is_key_on()
@@ -24,7 +23,6 @@ def main(Output):
     Output.print_info("System %s." % ("enabled" if sys_enabled_state else "disabled"))
 
     Timer.start_charge_delay_timer("program startup") # Treat RPi startup triggering as a state change.
-
 
     while True:
         # Check for enable-switch state change
