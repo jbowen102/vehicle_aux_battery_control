@@ -138,34 +138,30 @@ class TimeKeeper(object):
         """
         result = subprocess.run("iwgetid -r", capture_output=True, text=True, shell=True)
         network_ssid = result.stdout.strip()
+        self.Output.print_temp("network_ssid returned by iwgetid: %s" % network_ssid)
         return stored_ssid_mapping_dict.get(network_ssid)
 
     def wait_for_ntp_update(self, wait_time, log=False):
         # Establish whether OS has correct time before starting logging.
         if log:
-            self.Output.print_debug("Waiting for sys time to update from NTP server...")
+            self.Output.print_debug("Checking if sys date/time synchronized to NTP server...")
+
+        # ntplib.NTPClient().request("pool.ntp.org", timeout=wait_time)
+        start_time = dt.datetime.now()
         Controller().light_red_led(0.5)
         Controller().light_blue_led(0.5)
-
-        try:
-            ntplib.NTPClient().request("pool.ntp.org", timeout=wait_time)
-            # https://stackoverflow.com/a/12664736
-            # Assumes if Python script accesses successfully, OS will too.
-            # Check state in OS:
-            # timedatectl show --property=NTPSynchronized
-            # returns "NTPSynchronized=yes"
-        except ntplib.NTPException:
-            # Assume no internet.
-            self.valid_sys_time = False
-            if log:
-                self.Output.print_warn("FAILED to reach NTP server.")
-        else:
-            self.valid_sys_time = True
-            self.Output.assert_time_valid()
-            self.Output.print_debug("Successfully reached NTP server. Connected to %s." % self.get_network_name())
-
+        while not self._has_time_elapsed(start_time, wait_time):
+            result = subprocess.run(["timedatectl", "show", "--property=NTPSynchronized"], capture_output=True, text=True)
+            if result.stdout.strip() == "NTPSynchronized=yes":
+                self.valid_sys_time = True
+                self.Output.assert_time_valid()
+                self.Output.print_info("System date/time NTP-synchronized.")
+                break
         Controller().light_red_led(0)
         Controller().light_blue_led(0)
+
+        if log and not self.valid_sys_time:
+            self.Output.print_warn("System date/time not yet updated since last power loss.")
 
     def is_sys_time_valid(self):
         return self.valid_sys_time

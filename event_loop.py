@@ -25,7 +25,7 @@ def main(Output):
     while True:
         if Timer.is_sys_time_valid():
             Output.assert_time_valid()
-        elif Timer.get_seconds % 59 == 0:
+        elif Timer.get_seconds() % 59 == 0:
             # Re-check every minute. Introduces 2s delay but only outputs if successful.
             Timer.wait_for_ntp_update(2, log=False)
 
