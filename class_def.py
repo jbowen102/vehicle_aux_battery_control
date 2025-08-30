@@ -318,18 +318,24 @@ class Controller(object):
         assert self.is_relay_off(relay_num), "Tried to open relay %d but follow-up check failed." % relay_num
 
     def open_all_relays(self):
+        # Make sure charge-enable relay opened first (e.g., before charge-direction one)
+        self.open_relay(CHARGER_ENABLE_RELAY)
         for relay_num in self.relay_list:
             self.open_relay(relay_num)
 
-    def reboot(self):
-        self.turn_off_all_ind_leds()
+    def reboot(self, delay_s):
+        self.light_red_led(1)
         self.open_all_relays()
+        time.sleep(delay_s) # give time for user to connect over SSH and stop boot loop.
+        self.turn_off_all_ind_leds()
         subprocess.run(["/usr/bin/sudo", "usr/sbin/reboot"],
                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
-    def shut_down(self):
-        self.turn_off_all_ind_leds()
+    def shut_down(self, delay_s):
+        self.light_red_led(1)
         self.open_all_relays()
+        time.sleep(delay_s) # give time for user to connect over SSH and stop boot loop.
+        self.turn_off_all_ind_leds()
         subprocess.run(["/usr/bin/sudo", "usr/sbin/shutdown", "-h", "now"],
                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         # https://learn.sparkfun.com/tutorials/raspberry-pi-safe-reboot-and-shutdown-button/all
@@ -620,7 +626,7 @@ class Vehicle(object):
 
     def shut_down_controller(self):
         self.Output.print_warn("Shutting down controller.")
-        Controller().shut_down()
+        Controller().shut_down(delay_s=3)
 
 
 class Battery(object):

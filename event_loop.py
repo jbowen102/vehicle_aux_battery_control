@@ -29,6 +29,7 @@ def main(Output):
             # Re-check every minute. Introduces 2s delay but only outputs if successful.
             Timer.wait_for_ntp_update(2, log=False)
 
+
         # Check for enable-switch state change
         if not Car.is_enable_switch_closed() and sys_enabled_state:
             # Switch opened for the first time.
@@ -166,7 +167,11 @@ if __name__ == "__main__":
     except TimeoutError:
         # Thrown by automationhat - "Timed out waiting for conversion."
         # Not sure what's causing it yet. Doesn't usually persist across reboot though.
-        Controller().reboot()
+        Controller().reboot(delay_s=20)
+    except OSError:
+        # Thrown by automationhat - "Device or resource busy"
+        # Not sure what's causing it yet. Doesn't usually persist across reboot though.
+        Controller().reboot(delay_s=20)
     except KeyboardInterrupt:
         Output.print_shutdown("Keyboard interrupt.")
     except Exception:
@@ -176,4 +181,4 @@ if __name__ == "__main__":
     finally:
         Controller().open_all_relays() # Does this run when program shut down by SIGTERM?
         # Output.print_warn("Shutting down controller.")
-        # Controller().shut_down()
+        # Controller().shut_down(delay_s=20)
