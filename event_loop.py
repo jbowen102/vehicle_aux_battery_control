@@ -8,9 +8,9 @@ from class_def import Vehicle, Controller, TimeKeeper, OutputHandler
 
 def main(Output):
     time.sleep(4)                # Give time for system to stabilize.
-    Car    = Vehicle(Output)
+    Car = Vehicle(Output)
     time.sleep(1)                # Give time for automationhat inputs to stabilize.
-    Timer  = TimeKeeper(Output, ntp_wait_time=30)
+    Timer = TimeKeeper(Output, ntp_wait_time=30)
 
     key_acc_powered   = Car.is_acc_powered()
     key_on_pos        = Car.is_key_on()

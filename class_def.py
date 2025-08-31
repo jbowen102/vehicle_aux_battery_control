@@ -23,17 +23,20 @@ MAIN_V_MIN = 11.5
 AUX_V_MAX = 13.5
 AUX_V_MIN = 11.5      # Don't let aux batt drop below this.
 
+SHUNT_AMP_VOLTAGE_RATIO = 20/0.075
+
 # Automation Hat pins
-AUX_BATT_V_MONITORING_PIN = 0   # labeled 1 on board
-MAIN_BATT_V_MONITORING_PIN = 1  # labeled 2 on board
+CHARGER_INPUT_SHUNT_LOW_PIN = 0   # labeled 1 on board
+CHARGER_INPUT_SHUNT_HIGH_PIN = 1  # labeled 2 on board
+CHARGER_OUTPUT_PIN = 2            # labeled 3 on board
 
-KEY_ACC_INPUT_PIN = 0           # labeled 1 on board
-KEY_ON_INPUT_PIN = 1            # labeled 2 on board
-ENABLE_SWITCH_DETECT_PIN = 2    # labeled 3 on board
+KEY_ACC_INPUT_PIN = 0             # labeled 1 on board
+KEY_ON_INPUT_PIN = 1              # labeled 2 on board
+ENABLE_SWITCH_DETECT_PIN = 2      # labeled 3 on board
 
-CHARGER_ENABLE_RELAY = 0        # labeled 1 on board
-CHARGE_DIRECTION_RELAY = 1      # labeled 2 on board
-KEEPALIVE_RELAY = 2             # labeled 3 on board
+CHARGER_ENABLE_RELAY = 0          # labeled 1 on board
+CHARGE_DIRECTION_RELAY = 1        # labeled 2 on board
+KEEPALIVE_RELAY = 2               # labeled 3 on board
 
 STATE_CHANGE_DELAY_SEC = 30
 RPI_SHUTDOWN_DELAY_SEC = 30
@@ -352,8 +355,6 @@ class Controller(object):
 class Vehicle(object):
     def __init__(self, Output):
         self.Output = Output
-        self.StarterBatt = StarterBattery(MAIN_BATT_V_MONITORING_PIN)
-        self.AuxBatt = AuxBattery(AUX_BATT_V_MONITORING_PIN)
         self.BattCharger = BatteryCharger(self.Output)
 
         self.key_acc_detect_pin = KEY_ACC_INPUT_PIN
@@ -399,13 +400,19 @@ class Vehicle(object):
         return enable_detect
 
     def get_main_voltage_raw(self, log=False):
-        voltage = self.StarterBatt.get_voltage()
+        if self.BattCharger.is_charge_direction_fwd():
+            voltage = Controller().read_voltage(CHARGER_OUTPUT_PIN)
+        else:
+            voltage = Controller().read_voltage(CHARGER_INPUT_SHUNT_HIGH_PIN)
         if log:
             self.Output.print_debug("Main voltage (raw): %.2fV" % voltage)
         return voltage
 
     def get_aux_voltage_raw(self, log=False):
-        voltage = self.AuxBatt.get_voltage()
+        if self.BattCharger.is_charge_direction_rev():
+            voltage = Controller().read_voltage(CHARGER_OUTPUT_PIN)
+        else:
+            voltage = Controller().read_voltage(CHARGER_INPUT_SHUNT_HIGH_PIN)
         if log:
             self.Output.print_debug("Aux voltage (raw): %.2fV" % voltage)
         return voltage
@@ -627,22 +634,6 @@ class Vehicle(object):
         Controller().shut_down(delay_s=3)
 
 
-class Battery(object):
-    def __init__(self, voltage_sensing_pin):
-        assert voltage_sensing_pin in (0, 1, 2), "Tried to create battery object with invalid voltage-sensing pin %d" % voltage_sensing_pin
-        self.v_pin = voltage_sensing_pin
-
-    def get_voltage(self):
-        return Controller().read_voltage(self.v_pin)
-
-
-class StarterBattery(Battery):
-    pass
-
-class AuxBattery(Battery):
-    pass
-
-
 class BatteryCharger(object):
     def __init__(self, Output):
         self.Output = Output
@@ -675,6 +666,13 @@ class BatteryCharger(object):
         if not Controller().is_relay_off(self.charge_direction_relay):
             self.Output.print_err("BatteryCharger.disable_charge() failed to open charge-direction relay.")
             raise ChargeControlError("BatteryCharger.disable_charge() failed to open charge-direction relay.")
+
+    def get_charge_current(self):
+        if not self.is_charging():
+            raise ChargeControlError("BatteryCharger.get_charge_current() called when not charging.")
+        voltage_diff = (  Controller().read_voltage(CHARGER_INPUT_SHUNT_HIGH_PIN)
+                        - Controller().read_voltage(CHARGER_INPUT_SHUNT_LOW_PIN) )
+        return voltage_diff * SHUNT_AMP_VOLTAGE_RATIO
 
     def is_charge_direction_fwd(self):
         return Controller().is_relay_off(self.charge_direction_relay)
