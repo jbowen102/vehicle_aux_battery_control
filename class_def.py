@@ -32,7 +32,7 @@ KEY_ON_INPUT_PIN = 1            # labeled 2 on board
 ENABLE_SWITCH_DETECT_PIN = 2    # labeled 3 on board
 
 CHARGER_ENABLE_RELAY = 0        # labeled 1 on board
-CHARGE_DIRECTION_RELAY = 1     # labeled 2 on board
+CHARGE_DIRECTION_RELAY = 1      # labeled 2 on board
 KEEPALIVE_RELAY = 2             # labeled 3 on board
 
 STATE_CHANGE_DELAY_SEC = 30
@@ -424,10 +424,10 @@ class Vehicle(object):
                 self.Output.print_warn("Starter battery being charged (by aux batt) during FLA battery-voltage reading (elevating value).")
         elif self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_rev():
             # Currently charging aux battery, depressing main voltage.
-            # This should only happen while engine running (and so be caught above)
-            output_str = "Aux batt being charged w/o engine running."
-            self.Output.print_err(output_str)
-            raise ChargeControlError(output_str)
+            # This should only happen while engine running, but if engine shut off after above condition eval'd, this block may run.
+            # But in that case, probably not elevated.
+            if log:
+                self.Output.print_warn("Charging aux battery during FLA battery-voltage reading (engine should have just stopped).")
 
         voltage_est = self.get_main_voltage_raw(log=log)
         if log:
@@ -599,11 +599,9 @@ class Vehicle(object):
 
         self.BattCharger.set_charge_direction_rev()
 
-        # # TEMP disabled while DPDT relay not yet installed.
-        # self.BattCharger.enable_charge()
+        self.BattCharger.enable_charge()
         # self.roll_indicator_light(Controller().light_green_led)
         Controller().toggle_green_led()
-        # # TEMP
 
         if log:
             self.Output.print_info("Charging auxiliary battery.")
@@ -669,6 +667,7 @@ class BatteryCharger(object):
             time.sleep(0.5)
             # Also release charge-direction relay to avoid wasting energy through its coil.
             Controller().open_relay(self.charge_direction_relay)
+            time.sleep(0.2)
 
         if self.is_charging():
             self.Output.print_err("BatteryCharger.disable_charge() failed to stop charging.")
@@ -678,16 +677,16 @@ class BatteryCharger(object):
             raise ChargeControlError("BatteryCharger.disable_charge() failed to open charge-direction relay.")
 
     def is_charge_direction_fwd(self):
-        return Controller().is_relay_on(self.charge_direction_relay)
+        return Controller().is_relay_off(self.charge_direction_relay)
 
     def is_charge_direction_rev(self):
-        return Controller().is_relay_off(self.charge_direction_relay)
+        return Controller().is_relay_on(self.charge_direction_relay)
 
     def set_charge_direction_fwd(self):
         # Charge starter battery with aux battery
         if self.is_charge_direction_rev():
             self.disable_charge()
-            Controller().close_relay(self.charge_direction_relay)
+            Controller().open_relay(self.charge_direction_relay)
             time.sleep(0.5)
         if not self.is_charge_direction_fwd():
             self.Output.print_err("BatteryCharger.set_charge_direction_fwd() failed to set direction.")
@@ -697,7 +696,7 @@ class BatteryCharger(object):
         # Charge aux battery with alternator
         if self.is_charge_direction_fwd():
             self.disable_charge()
-            Controller().open_relay(self.charge_direction_relay)
+            Controller().close_relay(self.charge_direction_relay)
             time.sleep(0.5)
         if not self.is_charge_direction_rev():
             self.Output.print_err("BatteryCharger.set_charge_direction_rev() failed to set direction.")
