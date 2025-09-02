@@ -15,7 +15,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_DIR = os.path.join(SCRIPT_DIR, "logs")
 
 
-ALTERNATOR_OUTPUT_V_MIN = 12.7
+ALTERNATOR_OUTPUT_V_MIN = 12.5
 MAIN_V_MAX = 14.5
 MAIN_V_CHARGED = 12.6
 MAIN_V_MIN = 11.5
@@ -30,8 +30,8 @@ CHARGER_INPUT_SHUNT_LOW_PIN = 0   # labeled 1 on board
 CHARGER_INPUT_SHUNT_HIGH_PIN = 1  # labeled 2 on board
 CHARGER_OUTPUT_PIN = 2            # labeled 3 on board
 
-KEY_ACC_INPUT_PIN = 0             # labeled 1 on board
-KEY_ON_INPUT_PIN = 1              # labeled 2 on board
+ENGINE_ON_INPUT_PIN = 0           # labeled 1 on board
+KEY_ACC_INPUT_PIN = 1             # labeled 2 on board
 ENABLE_SWITCH_DETECT_PIN = 2      # labeled 3 on board
 
 CHARGER_ENABLE_RELAY = 0          # labeled 1 on board
@@ -358,7 +358,7 @@ class Vehicle(object):
         self.BattCharger = BatteryCharger(self.Output)
 
         self.key_acc_detect_pin = KEY_ACC_INPUT_PIN
-        self.key_on_detect_pin = KEY_ON_INPUT_PIN
+        self.engine_on_detect_pin = ENGINE_ON_INPUT_PIN
 
         self.enable_sw_detect_pin = ENABLE_SWITCH_DETECT_PIN
         self.keepalive_relay_num = KEEPALIVE_RELAY
@@ -372,14 +372,11 @@ class Vehicle(object):
         # Returns True when key in either ACC or ON position
         return Controller().is_input_high(self.key_acc_detect_pin)
 
-    def is_key_on(self):
-        return Controller().is_input_high(self.key_on_detect_pin)
-
     def is_key_off(self):
         return not self.is_acc_powered()
 
     def is_engine_running(self):
-        return (self.is_key_on() and (self.get_main_voltage_raw(log=False) >= ALTERNATOR_OUTPUT_V_MIN))
+        return Controller().is_input_high(self.engine_on_detect_pin)
 
     def is_enable_switch_closed(self, log=False):
         # Either ACC power present or keepalive relay should always be powering switch.
@@ -591,11 +588,11 @@ class Vehicle(object):
 
     def charge_aux_batt(self, log=False):
         if not self.is_starter_batt_charged():
-            # Only want to charge with engine running. Sometimes alternator output
-            # varies to where this was incorrectly inferring engine off momentarily
-            # and shutting program down. Switched to just making sure battery charged.
+            # Only want to charge with engine running. Sometimes engine stops after
+            # event loop already called this method (when engine was running), so
+            # instead just make sure FLA batt sufficient.
             main_voltage = self.get_main_voltage(log=True)
-            output_str = "Called Vehicle.charge_aux_batt(), but starter battery insufficiently charged (%.2fV)." % main_voltage
+            output_str = "Called Vehicle.charge_aux_batt(), but engine not running."
             self.Output.print_err(output_str)
             raise ChargeControlError(output_str)
         if self.is_aux_batt_full(log=False):
@@ -605,7 +602,6 @@ class Vehicle(object):
             self.Output.print_warn(output_str)
 
         self.BattCharger.set_charge_direction_rev()
-
         self.BattCharger.enable_charge()
         # self.roll_indicator_light(Controller().light_green_led)
         Controller().toggle_green_led()
@@ -630,8 +626,9 @@ class Vehicle(object):
             self.Output.print_info("Stopped charging.")
 
     def shut_down_controller(self):
-        self.Output.print_warn("Shutting down controller.")
-        Controller().shut_down(delay_s=3)
+        delay = 5
+        self.Output.print_warn("Shutting down controller in %d seconds." % delay)
+        Controller().shut_down(delay_s=delay)
 
 
 class BatteryCharger(object):

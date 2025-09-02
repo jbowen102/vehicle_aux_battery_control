@@ -13,10 +13,9 @@ def main(Output):
     Timer = TimeKeeper(Output, ntp_wait_time=30)
 
     key_acc_powered   = Car.is_acc_powered()
-    key_on_pos        = Car.is_key_on()
     engine_on_state   = Car.is_engine_running()
     sys_enabled_state = Car.is_enable_switch_closed()
-    Output.print_info("Key @ %s." % ("ON" if key_on_pos else ("ACC" if key_acc_powered else "OFF")))
+    Output.print_info("Key %s." % ("@ ACC" if key_acc_powered else "OFF"))
     Output.print_info("Engine %s." % ("ON" if engine_on_state else "OFF"))
     Output.print_info("System %s." % ("enabled" if sys_enabled_state else "disabled"))
 
@@ -68,26 +67,6 @@ def main(Output):
             Timer.start_charge_delay_timer("key ACC -> OFF")
             continue
 
-        elif Car.is_key_on() and not key_on_pos:
-            Output.print_info("Key switched from ACC to ON.")
-            key_on_pos = True
-            Car.stop_charging()
-            Timer.start_charge_delay_timer("key ACC -> ON")
-            continue
-
-        elif not Car.is_key_on() and key_on_pos:
-            Output.print_info("Key switched from ON to ACC.")
-            key_on_pos = False
-            if engine_on_state:
-                Output.print_info("Engine stopped (main voltage raw: %.2f)" % Car.get_main_voltage_raw())
-                engine_on_state = False
-                timer_str = "engine stopped, key ON -> ACC"
-            else:
-                timer_str = "key ON -> ACC"
-            Car.stop_charging()
-            Timer.start_charge_delay_timer(timer_str)
-            continue
-
         elif not Car.is_engine_running() and engine_on_state:
             # Could happen independent of key -> ACC if engine stalls.
             Output.print_info("Engine stopped (main voltage raw: %.2f)" % Car.get_main_voltage_raw())
@@ -116,7 +95,7 @@ def main(Output):
             if engine_on_state:
                 # Key ON, engine running.
                 if first_time_ind:
-                    Output.print_info("State: Key ON, engine running.")
+                    Output.print_info("State: Key ON; engine running.")
                 if Car.is_aux_batt_full(log=first_time_ind):
                     Timer.start_charge_delay_timer("aux battery full already")
                 else:
@@ -125,7 +104,7 @@ def main(Output):
             elif key_acc_powered:
                 # Key in ACC or ON but engine off.
                 if first_time_ind:
-                    Output.print_info("State: Key %s." % ("ON, engine off" if Car.is_key_on() else "in ACC (engine off)"))
+                    Output.print_info("State: Key in ACC or ON; engine off.")
                 if Car.is_aux_batt_sufficient(log=first_time_ind):
                     Car.charge_starter_batt(log=first_time_ind)
                 else:
@@ -141,7 +120,7 @@ def main(Output):
                     Output.print_info("State: Key OFF.")
 
                 # if not Car.is_aux_batt_sufficient(log=first_time_ind):
-                temp_threshold = 13
+                temp_threshold = 13 # temp measure until long-term key-off charge logic implemented.
                 if not Car.is_aux_batt_sufficient(threshold_override=temp_threshold, log=False):
                     # If Li batt V low, power down RPi.
                     Car.is_aux_batt_sufficient(threshold_override=temp_threshold, log=True) # Call again just for logging
@@ -167,11 +146,15 @@ if __name__ == "__main__":
     except TimeoutError:
         # Thrown by automationhat - "Timed out waiting for conversion."
         # Not sure what's causing it yet. Doesn't usually persist across reboot though.
-        Controller().reboot(delay_s=20)
+        delay = 20
+        self.Output.print_warn("Rebooting controller in %d seconds (TimeoutError caught)." % delay)
+        Controller().reboot(delay_s=delay)
     except OSError:
         # Thrown by automationhat - "Device or resource busy"
         # Not sure what's causing it yet. Doesn't usually persist across reboot though.
-        Controller().reboot(delay_s=20)
+        delay = 20
+        self.Output.print_warn("Rebooting controller in %d seconds (OSError caught)." % delay)
+        Controller().reboot(delay_s=delay)
     except KeyboardInterrupt:
         Output.print_shutdown("Keyboard interrupt.")
     except Exception:

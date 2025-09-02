@@ -1,13 +1,11 @@
 #!/bin/sh
 
-PROGRAM_ROOT=/home/${USERNAME}/vehicle_aux_battery_control
-
-USERNAME=$(cat ${PROGRAM_ROOT}/user)
+USERNAME="user11"
 # Activate virtual environment
 . /home/${USERNAME}/.virtualenvs/pimoroni/bin/activate
 # https://stackoverflow.com/a/16011496
 
-
+PROGRAM_ROOT=/home/${USERNAME}/vehicle_aux_battery_control
 # Kill program if already running.
 ${PROGRAM_ROOT}/kill_event_loop.sh
 
