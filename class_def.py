@@ -15,7 +15,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_DIR = os.path.join(SCRIPT_DIR, "logs")
 
 
-ALTERNATOR_OUTPUT_V_MIN = 12.5
+ALTERNATOR_OUTPUT_V_MIN = 13
 MAIN_V_MAX = 14.5
 MAIN_V_CHARGED = 12.6
 MAIN_V_MIN = 11.5
@@ -24,6 +24,7 @@ AUX_V_MAX = 13.5
 AUX_V_MIN = 11.5      # Don't let aux batt drop below this.
 
 SHUNT_AMP_VOLTAGE_RATIO = 20/0.075
+MIN_CHARGE_CURRENT = 0.5
 
 # Automation Hat pins
 CHARGER_INPUT_SHUNT_LOW_PIN = 0   # labeled 1 on board
@@ -173,6 +174,11 @@ class TimeKeeper(object):
         """Returns seconds part of current time as int.
         """
         return int(dt.datetime.now().strftime("%-S"))
+
+    def get_minutes(self):
+        """Returns minutes part of current time as int.
+        """
+        return int(dt.datetime.now().strftime("%-M"))
 
     def start_shutdown_timer(self, log=True):
         """If called while timer already running, timer restarts.
@@ -369,7 +375,31 @@ class Vehicle(object):
         self.led_level = 0
 
         Controller().open_all_relays()
+        time.sleep(1)                # Give time for automationhat inputs to stabilize.
+        self.check_wiring()
         Controller().close_relay(self.keepalive_relay_num) # Keep on whenever device is on.
+
+    def check_wiring(self):
+        if self.get_main_voltage_raw() < 5:
+            # No FLA voltage detected
+            output_str = "No main voltage detected (reading %.2fV)." % self.get_main_voltage_raw(log=False)
+            self.Output.print_err(output_str)
+            raise SystemVoltageError(output_str)
+        if self.get_aux_voltage_raw() < 5:
+            # No Li voltage detected
+            output_str = "No aux voltage detected (reading %.2fV)." % self.get_aux_voltage_raw(log=False)
+            self.Output.print_err(output_str)
+            raise SystemVoltageError(output_str)
+
+        # TODO - FIX
+        # if self.BattCharger.is_charging() and self.BattCharger.get_charge_current() < MIN_CHARGE_CURRENT:
+        #     output_str = "No charge current detected despite charging (reading %.2fA)." % self.BattCharger.get_charge_current()
+        #     self.Output.print_err(output_str)
+        #     raise ChargeControlError(output_str)
+        if self.is_key_off() and self.is_engine_running():
+            output_str = "Inferred engine running but key OFF."
+            self.Output.print_err(output_str)
+            raise SystemVoltageError(output_str)
 
     def is_acc_powered(self):
         # Returns True when key in either ACC or ON position

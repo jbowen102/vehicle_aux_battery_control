@@ -9,7 +9,6 @@ from class_def import Vehicle, Controller, TimeKeeper, OutputHandler
 def main(Output):
     time.sleep(4)                # Give time for system to stabilize.
     Car = Vehicle(Output)
-    time.sleep(1)                # Give time for automationhat inputs to stabilize.
     Timer = TimeKeeper(Output, ntp_wait_time=30)
 
     key_acc_powered   = Car.is_acc_powered()
@@ -28,6 +27,9 @@ def main(Output):
             # Re-check every minute. Introduces 2s delay but only outputs if successful.
             Timer.wait_for_ntp_update(2, log=False)
 
+        if (Timer.get_minutes() % 10 == 0) and (Timer.get_seconds() % 30 == 0):
+            Car.check_wiring() # periodically look for I/O issues.
+            time.sleep(1)
 
         # Check for enable-switch state change
         if not Car.is_enable_switch_closed() and sys_enabled_state:
