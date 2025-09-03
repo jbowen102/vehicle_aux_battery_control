@@ -151,6 +151,7 @@ class TimeKeeper(object):
 
         # ntplib.NTPClient().request("pool.ntp.org", timeout=wait_time)
         start_time = dt.datetime.now()
+        Controller().turn_off_all_ind_leds()
         Controller().light_red_led(0.5)
         Controller().light_blue_led(0.5)
         while not self._has_time_elapsed(start_time, wait_time):
@@ -160,8 +161,7 @@ class TimeKeeper(object):
                 self.Output.assert_time_valid()
                 self.Output.print_info("System date/time NTP-synchronized.")
                 break
-        Controller().light_red_led(0)
-        Controller().light_blue_led(0)
+        Controller().turn_off_all_ind_leds()
 
         if log and not self.valid_sys_time:
             self.Output.print_warn("System date/time not yet updated since last power loss.")
@@ -177,6 +177,7 @@ class TimeKeeper(object):
     def start_shutdown_timer(self, log=True):
         """If called while timer already running, timer restarts.
         """
+        Controller().turn_off_all_ind_leds()
         self.shutdown_timer_start = dt.datetime.now()
         if log:
             self.Output.print_debug("RPi shutdown timer started at %s." % self.shutdown_timer_start.strftime("%H:%M:%S"))
@@ -210,6 +211,7 @@ class TimeKeeper(object):
     def start_charge_delay_timer(self, state_change_desc, log=True):
         """If called while timer already running, timer restarts.
         """
+        Controller().turn_off_all_ind_leds()
         self.state_change_timer_start = dt.datetime.now()
         if log:
             self.Output.print_debug("Charge-delay timer started (%s) at %s." % (state_change_desc, self.state_change_timer_start.strftime("%H:%M:%S")))
@@ -335,6 +337,7 @@ class Controller(object):
                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
     def shut_down(self, delay_s):
+        self.turn_off_all_ind_leds()
         self.light_red_led(1)
         self.open_all_relays()
         time.sleep(delay_s) # give time for user to connect over SSH and stop boot loop.
@@ -375,8 +378,17 @@ class Vehicle(object):
     def is_key_off(self):
         return not self.is_acc_powered()
 
-    def is_engine_running(self):
-        return Controller().is_input_high(self.engine_on_detect_pin)
+    def is_engine_running(self, log=False):
+        if not self.is_acc_powered():
+            return False
+        else:
+            # W signal not consistent enough.
+            ecu_w_signal_high = Controller().is_input_high(self.engine_on_detect_pin)
+            main_voltage_elevated = (self.get_main_voltage_raw(log=log) >= ALTERNATOR_OUTPUT_V_MIN)
+            dc_charger_elevating = (self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_fwd())
+            if log:
+                self.Output.print_debug("ECU W signal %s" % ("HIGH" if ecu_w_signal_high else "LOW"))
+            return (ecu_w_signal_high or (main_voltage_elevated and not dc_charger_elevating))
 
     def is_enable_switch_closed(self, log=False):
         # Either ACC power present or keepalive relay should always be powering switch.
@@ -626,6 +638,7 @@ class Vehicle(object):
             self.Output.print_info("Stopped charging.")
 
     def shut_down_controller(self):
+        Controller().turn_off_all_ind_leds()
         delay = 5
         self.Output.print_warn("Shutting down controller in %d seconds." % delay)
         Controller().shut_down(delay_s=delay)

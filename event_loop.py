@@ -69,7 +69,7 @@ def main(Output):
 
         elif not Car.is_engine_running() and engine_on_state:
             # Could happen independent of key -> ACC if engine stalls.
-            Output.print_info("Engine stopped (main voltage raw: %.2f)" % Car.get_main_voltage_raw())
+            Output.print_info("Engine stopped (main voltage raw: %.2f)." % Car.get_main_voltage_raw())
             engine_on_state = False
             Car.stop_charging()
             Timer.start_charge_delay_timer("engine stopped")
