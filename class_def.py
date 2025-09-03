@@ -673,6 +673,24 @@ class Vehicle(object):
         self.Output.print_warn("Shutting down controller in %d seconds." % delay)
         Controller().shut_down(delay_s=delay)
 
+    def output_status(self):
+        self.Output.print_info("Status:")
+        key_acc_powered = self.is_acc_powered()
+        engine_on_state = self.is_engine_running()
+        charging_fla = (self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_fwd())
+        charging_li = (self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_rev())
+        charge_current = self.BattCharger.get_charge_current() if self.BattCharger.is_charging() else None
+        ecu_w_signal_high = Controller().is_input_high(self.engine_on_detect_pin)
+
+        self.Output.print_info("\tKey %s." % ("@ ACC/ON" if key_acc_powered else "OFF"))
+        self.Output.print_info("\tEngine %s (W signal %s)." % (("ON" if engine_on_state else "OFF"), ("HIGH" if ecu_w_signal_high else "LOW")))
+        self.Output.print_info("\tMain (raw): %.2f" % self.get_main_voltage_raw())
+        self.Output.print_info("\tAux (raw): %.2f" % self.get_aux_voltage_raw())
+        self.Output.print_info("\t%s" % (      ("Charging -> FLA (%.2fA)." % charge_current) if charging_fla
+                                         else (("Charging -> Li (%.2fA)." % charge_current) if charging_li
+                                         else  "Not charging.")))
+        self.Output.print_temp("\tShunt high-side voltage: %.2f" % Controller().read_voltage(CHARGER_INPUT_SHUNT_HIGH_PIN))
+        self.Output.print_temp("\tShunt low-side voltage: %.2f" % Controller().read_voltage(CHARGER_INPUT_SHUNT_LOW_PIN))
 
 class BatteryCharger(object):
     def __init__(self, Output):

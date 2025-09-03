@@ -14,10 +14,7 @@ def main(Output):
     key_acc_powered   = Car.is_acc_powered()
     engine_on_state   = Car.is_engine_running()
     sys_enabled_state = Car.is_enable_switch_closed()
-    Output.print_info("Key %s." % ("@ ACC" if key_acc_powered else "OFF"))
-    Output.print_info("Engine %s." % ("ON" if engine_on_state else "OFF"))
-    Output.print_info("System %s." % ("enabled" if sys_enabled_state else "disabled"))
-
+    Car.output_status()
     Timer.start_charge_delay_timer("program startup") # Treat RPi startup triggering as a state change.
 
     while True:
@@ -29,6 +26,11 @@ def main(Output):
 
         if (Timer.get_minutes() % 10 == 0) and (Timer.get_seconds() % 30 == 0):
             Car.check_wiring() # periodically look for I/O issues.
+            time.sleep(1)
+
+        if (Timer.get_minutes() % 5 == 0) and (Timer.get_seconds() % 32 == 0):
+            # Every 5 minutes, print/log system status info.
+            Car.output_status()
             time.sleep(1)
 
         # Check for enable-switch state change
