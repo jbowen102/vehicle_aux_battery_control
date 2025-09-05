@@ -24,7 +24,7 @@ def main(Output):
             # Re-check every minute. Introduces 2s delay but only outputs if successful.
             Timer.wait_for_ntp_update(2, log=False)
 
-        if (Timer.get_minutes() % 10 == 0) and (Timer.get_seconds() % 30 == 0):
+        if (Timer.get_minutes() % 10 == 0) and (Timer.get_seconds() % 43 == 0):
             Car.check_wiring() # periodically look for I/O issues.
             time.sleep(1)
 
@@ -67,6 +67,7 @@ def main(Output):
         elif not Car.is_acc_powered() and key_acc_powered:
             Output.print_info("Key switched from ACC to OFF.")
             key_acc_powered = False
+            engine_on_state = False
             Car.stop_charging()
             Timer.start_charge_delay_timer("key ACC -> OFF")
             continue
@@ -124,7 +125,7 @@ def main(Output):
                     Output.print_info("State: Key OFF.")
 
                 # if not Car.is_aux_batt_sufficient(log=first_time_ind):
-                temp_threshold = 13 # temp measure until long-term key-off charge logic implemented.
+                temp_threshold = 12 # temp measure until long-term key-off charge logic implemented.
                 if not Car.is_aux_batt_sufficient(threshold_override=temp_threshold, log=False):
                     # If Li batt V low, power down RPi.
                     Car.is_aux_batt_sufficient(threshold_override=temp_threshold, log=True) # Call again just for logging

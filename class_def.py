@@ -15,7 +15,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_DIR = os.path.join(SCRIPT_DIR, "logs")
 
 
-ALTERNATOR_OUTPUT_V_MIN = 13
+ALTERNATOR_OUTPUT_V_MIN = 12.8
 MAIN_V_MAX = 14.5
 MAIN_V_CHARGED = 12.6
 MAIN_V_MIN = 11.5
@@ -137,12 +137,13 @@ class TimeKeeper(object):
         self.valid_sys_time = False
         self.wait_for_ntp_update(ntp_wait_time, log=True)
 
-    def get_network_name(self):
+    def get_network_name(self, log=False):
         """Uses local file w/ SSID->name dict. Returns name of network as string.
         """
         result = subprocess.run("iwgetid -r", capture_output=True, text=True, shell=True)
         network_ssid = result.stdout.strip()
-        # self.Output.print_temp("network_ssid returned by iwgetid: %s" % network_ssid)
+        if log:
+            self.Output.print_temp("network_ssid returned by iwgetid: %s" % network_ssid)
         return stored_ssid_mapping_dict.get(network_ssid)
 
     def wait_for_ntp_update(self, wait_time, log=False):
@@ -157,10 +158,12 @@ class TimeKeeper(object):
         Controller().light_blue_led(0.5)
         while not self._has_time_elapsed(start_time, wait_time):
             result = subprocess.run(["timedatectl", "show", "--property=NTPSynchronized"], capture_output=True, text=True)
-            if result.stdout.strip() == "NTPSynchronized=yes":
+            if self.get_network_name(log=False) and result.stdout.strip() == "NTPSynchronized=yes":
+                # Takes a few seconds for network name to be returned after connection, so keep trying until can output full info.
+                # https://forums.raspberrypi.com/viewtopic.php?t=340058
                 self.valid_sys_time = True
                 self.Output.assert_time_valid()
-                self.Output.print_info("System date/time NTP-synchronized (connected to %s)." % self.get_network_name())
+                self.Output.print_info("System date/time NTP-synchronized (connected to %s)." % self.get_network_name(log=True))
                 break
         Controller().turn_off_all_ind_leds()
 
