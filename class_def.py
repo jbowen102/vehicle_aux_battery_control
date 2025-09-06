@@ -140,7 +140,7 @@ class TimeKeeper(object):
     def get_network_name(self, log=False):
         """Uses local file w/ SSID->name dict. Returns name of network as string.
         """
-        result = subprocess.run("iwgetid -r", capture_output=True, text=True, shell=True)
+        result = subprocess.run(["iwgetid, -r"], capture_output=True, text=True)
         network_ssid = result.stdout.strip()
         if log:
             self.Output.print_temp("network_ssid returned by iwgetid: %s" % network_ssid)
@@ -152,18 +152,18 @@ class TimeKeeper(object):
             self.Output.print_debug("Checking if sys date/time synchronized to NTP server...")
 
         # ntplib.NTPClient().request("pool.ntp.org", timeout=wait_time)
-        start_time = dt.datetime.now()
         Controller().turn_off_all_ind_leds()
         Controller().light_red_led(0.5)
         Controller().light_blue_led(0.5)
+        start_time = dt.datetime.now()
         while not self._has_time_elapsed(start_time, wait_time):
             result = subprocess.run(["timedatectl", "show", "--property=NTPSynchronized"], capture_output=True, text=True)
-            if self.get_network_name(log=False) and result.stdout.strip() == "NTPSynchronized=yes":
+            if result.stdout.strip() == "NTPSynchronized=yes":
                 # Takes a few seconds for network name to be returned after connection, so keep trying until can output full info.
                 # https://forums.raspberrypi.com/viewtopic.php?t=340058
                 self.valid_sys_time = True
                 self.Output.assert_time_valid()
-                self.Output.print_info("System date/time NTP-synchronized (connected to %s)." % self.get_network_name(log=True))
+                self.Output.print_info("System date/time NTP-synchronized%s." % ("(connected to %s)" % (self.get_network_name(log=False)) if self.get_network_name(log=True) else ""))
                 break
         Controller().turn_off_all_ind_leds()
 
@@ -265,18 +265,16 @@ class Controller(object):
         self.analog_list = [0, 1, 2]
         self.ind_led_list = [0, 1, 2]
 
-    def _light_led(self, led_num, brightness=None):
-        if brightness is None:
-            brightness = 1
+    def _light_led(self, led_num, brightness):
         ah.light[led_num].write(brightness)
 
-    def light_green_led(self, brightness=None):
+    def light_green_led(self, brightness=1):
         self._light_led(0, brightness=brightness)
 
-    def light_blue_led(self, brightness=None):
+    def light_blue_led(self, brightness=1):
         self._light_led(1, brightness=brightness)
 
-    def light_red_led(self, brightness=None):
+    def light_red_led(self, brightness=1):
         self._light_led(2, brightness=brightness)
 
     def toggle_green_led(self):
@@ -338,6 +336,7 @@ class Controller(object):
             self.open_relay(relay_num)
 
     def reboot(self, delay_s):
+        self.turn_off_all_ind_leds()
         self.light_red_led(1)
         self.open_all_relays()
         time.sleep(delay_s) # give time for user to connect over SSH and stop boot loop.

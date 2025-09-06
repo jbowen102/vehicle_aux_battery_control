@@ -23,6 +23,7 @@ def main(Output):
         elif Timer.get_seconds() % 59 == 0:
             # Re-check every minute. Introduces 2s delay but only outputs if successful.
             Timer.wait_for_ntp_update(2, log=False)
+            self.get_network_name(log=True) # Print if connected to a network.
 
         if (Timer.get_minutes() % 10 == 0) and (Timer.get_seconds() % 43 == 0):
             Car.check_wiring() # periodically look for I/O issues.
@@ -152,13 +153,13 @@ if __name__ == "__main__":
         # Thrown by automationhat - "Timed out waiting for conversion."
         # Not sure what's causing it yet. Doesn't usually persist across reboot though.
         delay = 20
-        self.Output.print_warn("Rebooting controller in %d seconds (TimeoutError caught)." % delay)
+        Output.print_err("Rebooting controller in %d seconds (TimeoutError caught)." % delay)
         Controller().reboot(delay_s=delay)
     except OSError:
         # Thrown by automationhat - "Device or resource busy"
         # Not sure what's causing it yet. Doesn't usually persist across reboot though.
         delay = 20
-        self.Output.print_warn("Rebooting controller in %d seconds (OSError caught)." % delay)
+        Output.print_err("Rebooting controller in %d seconds (OSError caught)." % delay)
         Controller().reboot(delay_s=delay)
     except KeyboardInterrupt:
         Output.print_shutdown("Keyboard interrupt.")
