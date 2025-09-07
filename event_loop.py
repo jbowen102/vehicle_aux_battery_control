@@ -152,15 +152,22 @@ if __name__ == "__main__":
     except TimeoutError:
         # Thrown by automationhat - "Timed out waiting for conversion."
         # Not sure what's causing it yet. Doesn't usually persist across reboot though.
+        Output.print_err(traceback.format_exc())
         delay = 20
         Output.print_err("Rebooting controller in %d seconds (TimeoutError caught)." % delay)
         Controller().reboot(delay_s=delay)
-    except OSError:
-        # Thrown by AutomationHAT - "Device or resource busy"
+    except OSError as e:
+        # Thrown by AutomationHAT - "OSError: [Errno 16] Device or resource busy"
         # Not sure what's causing it yet. Doesn't usually persist across reboot though.
-        delay = 20
-        Output.print_err("Rebooting controller in %d seconds (OSError caught)." % delay)
-        Controller().reboot(delay_s=delay)
+        # This block seems to catch other errors unintentionally, so have to be more specific.
+        if e.errno == 16:
+            Output.print_err(traceback.format_exc())
+            delay = 20
+            Output.print_err("Rebooting controller in %d seconds (OSError caught)." % delay)
+            Controller().reboot(delay_s=delay)
+        else:
+            # If something else, just kill program and don't reboot.
+            Output.print_shutdown(traceback.format_exc())
     except KeyboardInterrupt:
         Output.print_shutdown("Keyboard interrupt.")
     except Exception:

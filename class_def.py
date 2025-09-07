@@ -140,10 +140,10 @@ class TimeKeeper(object):
     def get_network_name(self, log=False):
         """Uses local file w/ SSID->name dict. Returns name of network as string.
         """
-        result = subprocess.run(["iwgetid, -r"], capture_output=True, text=True)
+        result = subprocess.run(["iwgetid", "-r"], capture_output=True, text=True)
         network_ssid = result.stdout.strip()
         if log:
-            self.Output.print_temp("network_ssid returned by iwgetid: %s" % network_ssid)
+            self.Output.print_temp("Network SSID returned by iwgetid: %s" % network_ssid)
         return stored_ssid_mapping_dict.get(network_ssid)
 
     def wait_for_ntp_update(self, wait_time, log=False):
@@ -163,7 +163,7 @@ class TimeKeeper(object):
                 # https://forums.raspberrypi.com/viewtopic.php?t=340058
                 self.valid_sys_time = True
                 self.Output.assert_time_valid()
-                self.Output.print_info("System date/time NTP-synchronized%s." % ("(connected to %s)" % (self.get_network_name(log=False)) if self.get_network_name(log=True) else ""))
+                self.Output.print_info("System date/time NTP-synchronized%s." % (" (connected to %s)" % (self.get_network_name(log=False)) if self.get_network_name(log=True) else ""))
                 break
         Controller().turn_off_all_ind_leds()
 
