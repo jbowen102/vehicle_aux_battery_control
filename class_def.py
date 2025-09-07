@@ -336,23 +336,31 @@ class Controller(object):
             self.open_relay(relay_num)
 
     def reboot(self, delay_s):
-        self.turn_off_all_ind_leds()
-        self.light_red_led(1)
-        self.open_all_relays()
-        time.sleep(delay_s) # give time for user to connect over SSH and stop boot loop.
-        self.turn_off_all_ind_leds()
-        subprocess.run(["/usr/bin/sudo", "usr/sbin/reboot"],
-                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        try:
+            self.turn_off_all_ind_leds()
+            self.light_red_led(1)
+            self.open_all_relays()
+        except:
+            # If AutomationHAT errored out, skip nice-to-have feature of LED indication.
+            pass
+        finally:
+            time.sleep(delay_s) # give time for user to connect over SSH and stop boot loop.
+            subprocess.run(["/usr/bin/sudo", "usr/sbin/reboot"],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
     def shut_down(self, delay_s):
-        self.turn_off_all_ind_leds()
-        self.light_red_led(1)
-        self.open_all_relays()
-        time.sleep(delay_s) # give time for user to connect over SSH and stop boot loop.
-        self.turn_off_all_ind_leds()
-        subprocess.run(["/usr/bin/sudo", "usr/sbin/shutdown", "-h", "now"],
-                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        # https://learn.sparkfun.com/tutorials/raspberry-pi-safe-reboot-and-shutdown-button/all
+        try:
+            self.turn_off_all_ind_leds()
+            self.light_red_led(1)
+            self.open_all_relays()
+        except:
+            # If AutomationHAT errored out, skip nice-to-have feature of LED indication.
+            pass
+        finally:
+            time.sleep(delay_s) # give time for user to connect over SSH and stop boot loop.
+            subprocess.run(["/usr/bin/sudo", "usr/sbin/shutdown", "-h", "now"],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            # https://learn.sparkfun.com/tutorials/raspberry-pi-safe-reboot-and-shutdown-button/all
 
     def sigterm_handler(self, _signo, _stack_frame):
         """Pipe kill signal from Linux to this Python script to allow graceful exit.

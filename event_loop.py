@@ -156,7 +156,7 @@ if __name__ == "__main__":
         Output.print_err("Rebooting controller in %d seconds (TimeoutError caught)." % delay)
         Controller().reboot(delay_s=delay)
     except OSError:
-        # Thrown by automationhat - "Device or resource busy"
+        # Thrown by AutomationHAT - "Device or resource busy"
         # Not sure what's causing it yet. Doesn't usually persist across reboot though.
         delay = 20
         Output.print_err("Rebooting controller in %d seconds (OSError caught)." % delay)
