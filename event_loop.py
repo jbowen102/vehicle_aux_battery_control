@@ -26,16 +26,16 @@ def main(Output):
     while True:
         if Timer.is_sys_time_valid():
             Output.assert_time_valid()
-        elif Timer.get_seconds() % 59 == 0:
+        elif Timer.get_seconds() == 59:
             # Re-check every minute. Introduces 2s delay but only outputs if successful.
             Timer.wait_for_ntp_update(2, log=False)
-            self.get_network_name(log=True) # Print if connected to a network.
+            Timer.get_network_name(log=True) # Print if connected to a network.
 
-        if (Timer.get_minutes() % 10 == 0) and (Timer.get_seconds() % 43 == 0):
+        if (Timer.get_minutes() % 10 == 0) and (Timer.get_seconds() == 43):
             Car.check_wiring() # periodically look for I/O issues.
             time.sleep(1)
 
-        if (Timer.get_minutes() % 5 == 0) and (Timer.get_seconds() % 32 == 0):
+        if (Timer.get_minutes() % 5 == 0) and (Timer.get_seconds() == 0):
             # Every 5 minutes, print/log system status info.
             Car.output_status()
             time.sleep(1)

@@ -140,7 +140,7 @@ class TimeKeeper(object):
     def get_network_name(self, log=False):
         """Uses local file w/ SSID->name dict. Returns name of network as string.
         """
-        result = subprocess.run(["iwgetid", "-r"], capture_output=True, text=True)
+        result = subprocess.run(["/usr/sbin/iwgetid", "-r"], capture_output=True, text=True)
         network_ssid = result.stdout.strip()
         if log:
             self.Output.print_temp("Network SSID returned by iwgetid: %s" % network_ssid)
@@ -152,9 +152,9 @@ class TimeKeeper(object):
             self.Output.print_debug("Checking if sys date/time synchronized to NTP server...")
 
         # ntplib.NTPClient().request("pool.ntp.org", timeout=wait_time)
-        Controller().turn_off_all_ind_leds()
-        Controller().light_red_led(0.5)
-        Controller().light_blue_led(0.5)
+        # Controller().turn_off_all_ind_leds()
+        # Controller().light_red_led(0.5)
+        # Controller().light_blue_led(0.5)
         start_time = dt.datetime.now()
         while not self._has_time_elapsed(start_time, wait_time):
             result = subprocess.run(["timedatectl", "show", "--property=NTPSynchronized"], capture_output=True, text=True)
@@ -165,7 +165,7 @@ class TimeKeeper(object):
                 self.Output.assert_time_valid()
                 self.Output.print_info("System date/time NTP-synchronized%s." % (" (connected to %s)" % (self.get_network_name(log=False)) if self.get_network_name(log=True) else ""))
                 break
-        Controller().turn_off_all_ind_leds()
+        # Controller().turn_off_all_ind_leds()
 
         if log and not self.valid_sys_time:
             self.Output.print_warn("System date/time not yet updated since last power loss.")
@@ -689,15 +689,17 @@ class Vehicle(object):
         engine_on_state = self.is_engine_running()
         charging_fla = (self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_fwd())
         charging_li = (self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_rev())
-        charge_current = self.BattCharger.get_charge_current() if self.BattCharger.is_charging() else None
+        # charge_current = self.BattCharger.get_charge_current() if self.BattCharger.is_charging() else None
         ecu_w_signal_high = Controller().is_input_high(self.engine_on_detect_pin)
 
         self.Output.print_info("\tKey %s." % ("@ ACC/ON" if key_acc_powered else "OFF"))
         self.Output.print_info("\tEngine %s (W signal %s)." % (("ON" if engine_on_state else "OFF"), ("HIGH" if ecu_w_signal_high else "LOW")))
         self.Output.print_info("\tMain (raw): %.2f" % self.get_main_voltage_raw())
         self.Output.print_info("\tAux (raw): %.2f" % self.get_aux_voltage_raw())
-        self.Output.print_info("\t%s" % (      ("Charging -> FLA (%.2fA)." % charge_current) if charging_fla
-                                         else (("Charging -> Li (%.2fA)." % charge_current) if charging_li
+        # self.Output.print_info("\t%s" % (      ("Charging -> FLA (%.2fA)." % charge_current) if charging_fla
+        #                                  else (("Charging -> Li (%.2fA)." % charge_current) if charging_li
+        self.Output.print_info("\t%s" % (      ("Charging -> FLA.") if charging_fla
+                                         else (("Charging -> Li.") if charging_li
                                          else  "Not charging.")))
         self.Output.print_temp("\tShunt high-side voltage: %.2f" % Controller().read_voltage(CHARGER_INPUT_SHUNT_HIGH_PIN))
         self.Output.print_temp("\tShunt low-side voltage: %.2f" % Controller().read_voltage(CHARGER_INPUT_SHUNT_LOW_PIN))
