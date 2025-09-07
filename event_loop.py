@@ -15,7 +15,13 @@ def main(Output):
     engine_on_state   = Car.is_engine_running()
     sys_enabled_state = Car.is_enable_switch_closed()
     Car.output_status()
-    Timer.start_charge_delay_timer("program startup") # Treat RPi startup triggering as a state change.
+
+    # Handle if program started w/ enable switch open (could have opened after boot initiated).
+    if sys_enabled_state:
+        Timer.start_charge_delay_timer("program startup") # Treat RPi startup triggering as a state change.
+    else:
+        Car.is_enable_switch_closed(log=True) # Call again just for logging
+        Timer.start_shutdown_timer(log=True)
 
     while True:
         if Timer.is_sys_time_valid():
