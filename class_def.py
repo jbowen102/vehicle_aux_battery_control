@@ -1,4 +1,5 @@
 import os
+import pwd
 import time
 import sys
 import subprocess
@@ -105,8 +106,10 @@ class OutputHandler(object):
             return None
 
     def _print_startup(self):
+        username = pwd.getpwuid(os.getuid()).pw_name
+        # https://stackoverflow.com/a/2899055
         self._add_to_log_file("")
-        self._add_to_log_file("-"*23 + " PROGRAM START [PID: %d] " % os.getpid() + "-"*20)
+        self._add_to_log_file("-"*23 + " PROGRAM START [USER: %s, PID: %d] " % (username, os.getpid()) + "-"*20)
 
     def print_temp(self, print_str, prompt_user=False):
         return self._print_and_log("[TEMP]  %s" % print_str, Fore.CYAN, prompt=prompt_user)
