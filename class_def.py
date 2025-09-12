@@ -160,8 +160,8 @@ class TimeKeeper(object):
         # Controller().light_blue_led(0.5)
         start_time = dt.datetime.now()
         while not self._has_time_elapsed(start_time, wait_time):
-            result = subprocess.run(["timedatectl", "show", "--property=NTPSynchronized"], capture_output=True, text=True)
-            if result.stdout.strip() == "NTPSynchronized=yes":
+            result = subprocess.run(["/usr/bin/timedatectl", "show", "--property=NTPSynchronized", "--value"], capture_output=True, text=True)
+            if result.stdout.strip() == "yes":
                 # Takes a few seconds for network name to be returned after connection, so keep trying until can output full info.
                 # https://forums.raspberrypi.com/viewtopic.php?t=340058
                 self.valid_sys_time = True
