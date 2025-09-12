@@ -1,5 +1,8 @@
 #!/bin/sh
 
+SCRIPT_DIR="$(realpath "$(dirname "${0}")")"
+SCRIPT_NAME="$(basename "${0}")"
+
 USERNAME="user11"
 # Activate virtual environment
 . /home/${USERNAME}/.virtualenvs/pimoroni/bin/activate
@@ -16,5 +19,13 @@ touch "${LOG_PATH}"
 # Allow program running from user session to edit same file.
 chown "${USERNAME}" "${LOG_PATH}"
 
-cd "${PROGRAM_ROOT}"
-python event_loop.py
+# If USB unplugged from RPi, don't run program.
+KILLSWITCH_USB="USB-01"
+if [ ! -e "/media/${USERNAME}/${KILLSWITCH_USB}" ]; then
+    echo "${SCRIPT_NAME}: ${KILLSWITCH_USB} not present. Program not started." >> "${LOG_PATH}"
+    exit 254
+    # https://medium.com/@himanshurahangdale153/list-of-exit-status-codes-in-linux-f4c00c46c9e0
+else
+    cd "${PROGRAM_ROOT}"
+    python event_loop.py
+fi
