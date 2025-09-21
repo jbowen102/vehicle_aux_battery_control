@@ -70,7 +70,7 @@ class OutputHandler(object):
         if self.time_valid:
             return dt.datetime.now().strftime("%Y%m%dT%H%M%S")
         else:
-            return "---------" + dt.datetime.now().strftime("%H%M%S")
+            return self._get_datestamp(ntp_reqd=True) + "-" + dt.datetime.now().strftime("%H%M%S")
             # Keep incorrect time displayed because relative differences still useful in log.
 
     def _create_log_file(self):

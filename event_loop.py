@@ -163,10 +163,10 @@ if __name__ == "__main__":
         Output.print_err("Rebooting controller in %d seconds (TimeoutError caught)." % delay)
         Controller().reboot(delay_s=delay)
     except OSError as e:
-        # Thrown by AutomationHAT - "OSError: [Errno 16] Device or resource busy"
-        # Not sure what's causing it yet. Doesn't usually persist across reboot though.
         # This block seems to catch other errors unintentionally, so have to be more specific.
-        if e.errno == 16:
+        if e.errno in [5, 16]:
+            # "OSError: [Errno 5] Input/output error" | Thrown when AutomationHAT absent.
+            # "OSError: [Errno 16] Device or resource busy" | Thrown by AutomationHAT. Not sure what's causing it yet. Doesn't usually persist across reboot though.
             Output.print_err(traceback.format_exc())
             delay = 20
             Output.print_err("Rebooting controller in %d seconds (OSError caught)." % delay)
