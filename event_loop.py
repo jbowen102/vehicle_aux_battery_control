@@ -5,11 +5,9 @@ import traceback
 
 from class_def import Vehicle, Controller, TimeKeeper, OutputHandler
 
-
-def main(Output):
+def main(Output, Timer):
     time.sleep(4)                # Give time for system to stabilize.
     Car = Vehicle(Output)
-    Timer = TimeKeeper(Output, ntp_wait_time=30)
 
     key_acc_powered   = Car.is_acc_powered()
     engine_on_state   = Car.is_engine_running()
@@ -152,9 +150,14 @@ def main(Output):
 
 if __name__ == "__main__":
     signal.signal(signal.SIGTERM, Controller().sigterm_handler) # method that turns off LEDs and relays and exits Python script
+
     Output = OutputHandler()
+    Timer = TimeKeeper(Output)
+    Output.assoc_clock(Timer)
+    Timer.wait_for_ntp_update(log=True)
+
     try:
-        main(Output)
+        main(Output, Timer)
     except TimeoutError:
         # Thrown by automationhat - "Timed out waiting for conversion."
         # Not sure what's causing it yet. Doesn't usually persist across reboot though.

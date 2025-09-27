@@ -1,9 +1,9 @@
 import os
 import pwd
 import time
+import datetime as dt
 import sys
 import subprocess
-import datetime as dt
 import ntplib
 from colorama import Style, Fore, Back
 
@@ -16,12 +16,16 @@ from control_params import ALTERNATOR_OUTPUT_V_MIN, \
                            AUX_V_MIN, AUX_V_MAX, \
                            MIN_CHARGE_CURRENT, \
                            STATE_CHANGE_DELAY_SEC, \
-                           RPI_SHUTDOWN_DELAY_SEC
+                           RPI_SHUTDOWN_DELAY_SEC, \
+                           NTP_WAIT_TIME
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_DIR = os.path.join(SCRIPT_DIR, "logs")
 
+DATE_FORMAT = "%Y%m%d"
+TIME_FORMAT = "%H%M%S"
+DATETIME_FORMAT = "%sT%s" % (DATE_FORMAT, TIME_FORMAT)
 
 
 SHUNT_AMP_VOLTAGE_RATIO = 20/0.075
@@ -51,6 +55,10 @@ class SystemVoltageError(Exception):
 class OutputHandler(object):
     def __init__(self):
         self.time_valid = False
+        self.Clock = None # External TimeKeeper object must be associated to self.Clock w/ below method before using any of this class's methods.
+
+    def assoc_clock(self, Clock):
+        self.Clock = Clock
         self._create_log_file()
         self._print_startup()
 
@@ -58,16 +66,22 @@ class OutputHandler(object):
         self.time_valid = True
 
     def _get_datestamp(self, ntp_reqd=True):
+        """Returns string.
+        """
+        if self.Clock is None:
+            raise Exception("Tried to use _get_datestamp() but no Clock associated to OutputHandler.")
         if self.time_valid or not ntp_reqd:
-            return dt.datetime.now().strftime("%Y%m%d")
+            return self.Clock.get_time_now(DATE_FORMAT)
         else:
             return "--------"
 
     def _get_timestamp(self):
+        if self.Clock is None:
+            raise Exception("Tried to use _get_timestamp() but no Clock associated to OutputHandler.")
         if self.time_valid:
-            return dt.datetime.now().strftime("%Y%m%dT%H%M%S")
+            return self.Clock.get_time_now(DATETIME_FORMAT)
         else:
-            return self._get_datestamp(ntp_reqd=True) + "-" + dt.datetime.now().strftime("%H%M%S")
+            return self._get_datestamp(ntp_reqd=True) + "-" + self.Clock.get_time_now(TIME_FORMAT)
             # Keep incorrect time displayed because relative differences still useful in log.
 
     def _create_log_file(self):
@@ -129,13 +143,22 @@ class OutputHandler(object):
 
 
 class TimeKeeper(object):
-    def __init__(self, Output, ntp_wait_time):
+    def __init__(self, Output):
         self.Output = Output
         self.state_change_timer_start = None
         self.shutdown_timer_start = None
 
         self.valid_sys_time = False
-        self.wait_for_ntp_update(ntp_wait_time, log=True)
+
+    def get_time_now(self, string_format=None):
+        """Returns date and time as datetime object or
+        if string_format string arg passed, returns string.
+        """
+        datetime_now = dt.datetime.now()
+        if string_format is not None:
+            return datetime_now.strftime(string_format)
+        else:
+            return datetime_now
 
     def get_network_name(self, log=False):
         """Uses local file w/ SSID->name dict. Returns name of network as string.
@@ -146,17 +169,17 @@ class TimeKeeper(object):
             self.Output.print_temp("Network SSID returned by iwgetid: %s" % network_ssid)
         return stored_ssid_mapping_dict.get(network_ssid)
 
-    def wait_for_ntp_update(self, wait_time, log=False):
+    def wait_for_ntp_update(self, log=False):
         # Establish whether OS has correct time before starting logging.
         if log:
             self.Output.print_debug("Checking if sys date/time synchronized to NTP server...")
 
-        # ntplib.NTPClient().request("pool.ntp.org", timeout=wait_time)
+        # ntplib.NTPClient().request("pool.ntp.org", timeout=NTP_WAIT_TIME)
         # Controller().turn_off_all_ind_leds()
         # Controller().light_red_led(0.5)
         # Controller().light_blue_led(0.5)
-        start_time = dt.datetime.now()
-        while not self._has_time_elapsed(start_time, wait_time):
+        start_time = self.get_time_now()
+        while not self._has_time_elapsed(start_time, NTP_WAIT_TIME):
             result = subprocess.run(["/usr/bin/timedatectl", "show", "--property=NTPSynchronized", "--value"], capture_output=True, text=True)
             if result.stdout.strip() == "yes":
                 # Takes a few seconds for network name to be returned after connection, so keep trying until can output full info.
@@ -176,18 +199,18 @@ class TimeKeeper(object):
     def get_seconds(self):
         """Returns seconds part of current time as int.
         """
-        return int(dt.datetime.now().strftime("%-S"))
+        return int(self.get_time_now().strftime("%-S"))
 
     def get_minutes(self):
         """Returns minutes part of current time as int.
         """
-        return int(dt.datetime.now().strftime("%-M"))
+        return int(self.get_time_now().strftime("%-M"))
 
     def start_shutdown_timer(self, log=True):
         """If called while timer already running, timer restarts.
         """
         Controller().turn_off_all_ind_leds()
-        self.shutdown_timer_start = dt.datetime.now()
+        self.shutdown_timer_start = self.get_time_now()
         if log:
             self.Output.print_debug("RPi shutdown timer started at %s." % self.shutdown_timer_start.strftime("%H:%M:%S"))
 
@@ -221,7 +244,7 @@ class TimeKeeper(object):
         """If called while timer already running, timer restarts.
         """
         Controller().turn_off_all_ind_leds()
-        self.state_change_timer_start = dt.datetime.now()
+        self.state_change_timer_start = self.get_time_now()
         if log:
             self.Output.print_debug("Charge-delay timer started (%s) at %s." % (state_change_desc, self.state_change_timer_start.strftime("%H:%M:%S")))
 
@@ -248,7 +271,7 @@ class TimeKeeper(object):
             return (is_time_up, is_time_up)
 
     def _get_time_elapsed(self, start_time):
-        return (dt.datetime.now() - start_time)
+        return (self.get_time_now() - start_time)
 
     def _has_time_elapsed(self, start_time, threshold_sec):
         if self._get_time_elapsed(start_time) >= dt.timedelta(seconds=threshold_sec):
