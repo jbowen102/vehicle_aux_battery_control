@@ -10,22 +10,21 @@ from colorama import Style, Fore, Back
 import automationhat as ah
 
 from network_names import stored_ssid_mapping_dict     # local file
+from control_params import ALTERNATOR_OUTPUT_V_MIN, \
+                           MAIN_V_MIN, MAIN_V_MAX, \
+                           MAIN_V_CHARGED, \
+                           AUX_V_MIN, AUX_V_MAX, \
+                           MIN_CHARGE_CURRENT, \
+                           STATE_CHANGE_DELAY_SEC, \
+                           RPI_SHUTDOWN_DELAY_SEC
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_DIR = os.path.join(SCRIPT_DIR, "logs")
 
 
-ALTERNATOR_OUTPUT_V_MIN = 12.8
-MAIN_V_MAX = 14.5
-MAIN_V_CHARGED = 12.6
-MAIN_V_MIN = 11.5
-
-AUX_V_MAX = 13.5
-AUX_V_MIN = 11.5      # Don't let aux batt drop below this.
 
 SHUNT_AMP_VOLTAGE_RATIO = 20/0.075
-MIN_CHARGE_CURRENT = 0.5
 
 # Automation Hat pins
 CHARGER_INPUT_SHUNT_LOW_PIN = 0   # labeled 1 on board
@@ -40,8 +39,6 @@ CHARGER_ENABLE_RELAY = 0          # labeled 1 on board
 CHARGE_DIRECTION_RELAY = 1        # labeled 2 on board
 KEEPALIVE_RELAY = 2               # labeled 3 on board
 
-STATE_CHANGE_DELAY_SEC = 30
-RPI_SHUTDOWN_DELAY_SEC = 30
 
 
 class ChargeControlError(Exception):

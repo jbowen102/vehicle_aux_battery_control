@@ -18,6 +18,7 @@ LOG_PATH="${PROGRAM_ROOT}/logs/${DATESTAMP}.log"
 touch "${LOG_PATH}"
 # Allow program running from user session to edit same file.
 chown "${USERNAME}" "${LOG_PATH}"
+# Will fail if script hasn't been run by root since date updated to today.
 
 # If USB unplugged from RPi, don't run program.
 KILLSWITCH_USB="USB-01"

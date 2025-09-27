@@ -15,6 +15,7 @@ TEST*
 
 # Project-specific
 logs/
+control_params.py
 network_names.py
 user
 
