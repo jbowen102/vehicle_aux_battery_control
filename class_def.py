@@ -167,6 +167,7 @@ class TimeKeeper(object):
     def set_up_rtc(self):
         self.rtc = PCF8523(board.I2C())
         self.check_rtc(log=True)
+        self.update_rtc(log=True)
 
     def check_rtc(self, log=True):
         """Check RTC time plausibility. Will fall behind sys time if coin-cell
@@ -186,6 +187,21 @@ class TimeKeeper(object):
             self.Output.assert_time_valid()
             if log:
                 self.Output.print_info("Using RTC time.")
+
+    def update_rtc(self, log=True):
+        if not self.is_ntp_syncd(log=False):
+            self.wait_for_ntp_update(log=True)
+
+        if self.is_ntp_syncd(log=False):
+            prev_time = self.get_time_now(source="rtc")
+            self.rtc.datetime = time.localtime(dt.datetime.now().timestamp())
+            new_time = self.get_time_now(source="rtc")
+            if log:
+                self.Output.print_debug("Updated RTC time (%s -> %s) from NTP-syncd sys time."
+                                        % (prev_time, new_time))
+        elif log:
+            self.Output.print_debug("Not updating RTC time since sys time not syncd with NTP.")
+        # Does not set self.rtc_time_valid to True. Will be False if check_rtc() failed.
 
     def get_time_now(self, string_format=None, source=None):
         """Returns date and time as datetime object or
