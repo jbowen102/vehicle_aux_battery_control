@@ -19,7 +19,7 @@ from control_params import ALTERNATOR_OUTPUT_V_MIN, \
                            MIN_CHARGE_CURRENT, \
                            STATE_CHANGE_DELAY_SEC, \
                            RPI_SHUTDOWN_DELAY_SEC, \
-                           NTP_WAIT_TIME
+                           NTP_WAIT_TIME, RTC_LAG_THRESHOLD
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -173,32 +173,42 @@ class TimeKeeper(object):
         """Check RTC time plausibility. Will fall behind sys time if coin-cell
         battery dies.
         """
-        time_now_sys = self.get_time_now(source="sys")
-        time_now_rtc = self.get_time_now(source="rtc")
-        lag_threshold = 60 # seconds
-        if (time_now_sys - time_now_rtc) > dt.timedelta(seconds=lag_threshold):
+        # if (time_now_sys - time_now_rtc) > dt.timedelta(seconds=lag_threshold):
+        rtc_lag = self.get_rtc_lag()
+        if rtc_lag > dt.timedelta(seconds=RTC_LAG_THRESHOLD):
             self.rtc_time_valid = False
             if log:
                 self.Output.print_err("RTC time behind sys time %ds, over %ds threshold. "
                                       "Falling back to sys time."
-                                       % ((time_now_sys - time_now_rtc).seconds, lag_threshold))
+                                       % (rtc_lag, RTC_LAG_THRESHOLD))
+            self.wait_for_ntp_update()
         else:
             self.rtc_time_valid = True
             self.Output.assert_time_valid()
             if log:
                 self.Output.print_info("Using RTC time.")
 
+    def get_rtc_lag(self):
+        """Returns datetime.timedelta object.
+        """
+        time_now_sys = self.get_time_now(source="sys")
+        time_now_rtc = self.get_time_now(source="rtc")
+        return (time_now_sys - time_now_rtc)
+
     def update_rtc(self, log=True):
         if not self.is_ntp_syncd(log=False):
             self.wait_for_ntp_update(log=True)
 
         if self.is_ntp_syncd(log=False):
-            prev_time = self.get_time_now(source="rtc")
-            self.rtc.datetime = time.localtime(dt.datetime.now().timestamp())
-            new_time = self.get_time_now(source="rtc")
-            if log:
-                self.Output.print_debug("Updated RTC time (%s -> %s) from NTP-syncd sys time."
-                                        % (prev_time, new_time))
+            if (   (self.get_rtc_lag() >= dt.timedelta(seconds=1))
+                or (self.get_rtc_lag() <= dt.timedelta(seconds=-1))):
+                # Don't bother updating if <1s difference.
+                prev_time = self.get_time_now(source="rtc")
+                self.rtc.datetime = time.localtime(dt.datetime.now().timestamp())
+                new_time = self.get_time_now(source="rtc")
+                if log:
+                    self.Output.print_debug("Updated RTC time (%s -> %s) from NTP-syncd sys time."
+                                            % (prev_time, new_time))
         elif log:
             self.Output.print_debug("Not updating RTC time since sys time not syncd with NTP.")
         # Does not set self.rtc_time_valid to True. Will be False if check_rtc() failed.
@@ -225,6 +235,9 @@ class TimeKeeper(object):
         """
         result = subprocess.run(["/usr/sbin/iwgetid", "-r"], capture_output=True, text=True)
         network_ssid = result.stdout.strip()
+        # Can take a few seconds for network name to be returned after connection,
+        # so might get false negative.
+        # https://forums.raspberrypi.com/viewtopic.php?t=340058
         if log:
             self.Output.print_temp("Network SSID returned by iwgetid: %s" % network_ssid)
         return stored_ssid_mapping_dict.get(network_ssid)
@@ -255,9 +268,6 @@ class TimeKeeper(object):
         start_time = self.get_time_now()
         while not self._has_time_elapsed(start_time, NTP_WAIT_TIME):
             if self.is_ntp_syncd(log=False):
-                # Takes a few seconds for network name to be returned after connection,
-                # so keep trying until can output full info.
-                # https://forums.raspberrypi.com/viewtopic.php?t=340058
                 self.valid_sys_time = True
                 self.Output.assert_time_valid()
                 self.is_ntp_syncd(log=True) # Call again just for output
