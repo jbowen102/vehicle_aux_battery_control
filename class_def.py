@@ -17,8 +17,9 @@ from control_params import ALTERNATOR_OUTPUT_V_MIN, \
                            MAIN_V_CHARGED, \
                            AUX_V_MIN, AUX_V_MAX, \
                            MIN_CHARGE_CURRENT, \
-                           STATE_CHANGE_DELAY_SEC, \
                            RPI_SHUTDOWN_DELAY_SEC, \
+                           STATE_CHANGE_DELAY_SEC, \
+                           VOLTAGE_STABILIZATION_TIME_SEC, \
                            NTP_WAIT_TIME, RTC_LAG_THRESHOLD
 
 
@@ -159,10 +160,11 @@ class OutputHandler(object):
 class TimeKeeper(object):
     def __init__(self, Output):
         self.Output = Output
+        self.rtc_time_valid = False
+
         self.state_change_timer_start = None
         self.shutdown_timer_start = None
-
-        self.rtc_time_valid = False
+        self.charge_start_time = None
 
     def set_up_rtc(self):
         self.rtc = PCF8523(board.I2C())
@@ -277,8 +279,16 @@ class TimeKeeper(object):
         if log and not self.valid_sys_time:
             self.Output.print_warn("System date/time not yet updated since last power loss.")
 
-    def is_sys_time_valid(self):
-        return self.valid_sys_time
+    def set_charge_start_time(self):
+        self.charge_start_time = self.get_time_now()
+
+    def is_sys_voltage_stable(self):
+        if self.charge_start_time is None:
+            return True
+        elif self._has_time_elapsed(self.charge_start_time, VOLTAGE_STABILIZATION_TIME_SEC):
+            return True
+        else:
+            return False
 
     def get_seconds(self):
         """Returns seconds part of current time as int.
@@ -329,7 +339,7 @@ class TimeKeeper(object):
         """If called while timer already running, timer restarts.
         """
         Controller().turn_off_all_ind_leds()
-        self.state_change_timer_start = self.get_time_now()
+        self.state_change_timer_start = self.charge_start_time = self.get_time_now()
         if log:
             self.Output.print_debug("Charge-delay timer started (%s) at %s."
                                     % (state_change_desc, self.state_change_timer_start.strftime("%H:%M:%S")))
@@ -481,9 +491,10 @@ class Controller(object):
 
 
 class Vehicle(object):
-    def __init__(self, Output):
+    def __init__(self, Output, Timer):
         self.Output = Output
-        self.BattCharger = BatteryCharger(self.Output)
+        self.Timer = Timer
+        self.BattCharger = BatteryCharger(self.Output, self.Timer)
 
         self.key_acc_detect_pin = KEY_ACC_INPUT_PIN
         self.engine_on_detect_pin = ENGINE_ON_INPUT_PIN
@@ -694,6 +705,8 @@ class Vehicle(object):
         # return voltage_est
 
     def is_starter_batt_low(self, log=True):
+        if not self.Timer.is_sys_voltage_stable():
+            return False
         est_voltage = self.get_main_voltage(log=log)
         is_low = est_voltage < MAIN_V_MIN
         if log and is_low:
@@ -707,6 +720,9 @@ class Vehicle(object):
         return not self.is_starter_batt_charged(log=log)
 
     def is_aux_batt_empty(self, threshold_override=None, log=True):
+        if not self.Timer.is_sys_voltage_stable():
+            return False
+
         if threshold_override is not None:
             threshold = threshold_override
         else:
@@ -726,6 +742,8 @@ class Vehicle(object):
         return not self.is_aux_batt_empty(threshold_override=threshold_override, log=log)
 
     def is_aux_batt_full(self, log=False):
+        if not self.Timer.is_sys_voltage_stable():
+            return False
         est_voltage = self.get_aux_voltage(log=log)
         is_full = est_voltage >= AUX_V_MAX
         if log and is_full:
@@ -825,8 +843,9 @@ class Vehicle(object):
 
 
 class BatteryCharger(object):
-    def __init__(self, Output):
+    def __init__(self, Output, Timer):
         self.Output = Output
+        self.Timer = Timer
         self.charger_enable_relay = CHARGER_ENABLE_RELAY
         self.charge_direction_relay = CHARGE_DIRECTION_RELAY
 
@@ -837,6 +856,7 @@ class BatteryCharger(object):
         if not self.is_charging():
             Controller().close_relay(self.charger_enable_relay)
             time.sleep(0.5)
+            self.Timer.set_charge_start_time()
         if not self.is_charging():
             self.Output.print_err("BatteryCharger.enable_charge() failed to start charging.")
             raise ChargeControlError("BatteryCharger.enable_charge() failed to start charging.")
@@ -846,6 +866,7 @@ class BatteryCharger(object):
             Controller().open_relay(self.charger_enable_relay)
             # Allow system voltage to settle
             time.sleep(0.5)
+            self.Timer.set_charge_start_time()
             # Also release charge-direction relay to avoid wasting energy through its coil.
             Controller().open_relay(self.charge_direction_relay)
             time.sleep(0.2)
