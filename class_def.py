@@ -8,6 +8,8 @@ import ntplib
 from colorama import Style, Fore, Back
 
 import automationhat as ah
+from adafruit_pcf8523.pcf8523 import PCF8523
+import board
 
 from network_names import stored_ssid_mapping_dict     # local file
 from control_params import ALTERNATOR_OUTPUT_V_MIN, \
@@ -65,15 +67,16 @@ class OutputHandler(object):
     def assert_time_valid(self):
         self.time_valid = True
 
-    def _get_datestamp(self, ntp_reqd=True):
+    def _get_datestamp(self, valid_only=True):
         """Returns string.
         """
         if self.Clock is None:
             raise Exception("Tried to use _get_datestamp() but no Clock associated to OutputHandler.")
-        if self.time_valid or not ntp_reqd:
-            return self.Clock.get_time_now(DATE_FORMAT)
-        else:
+
+        if valid_only and (not self.time_valid):
             return "--------"
+        else:
+            return self.Clock.get_time_now(DATE_FORMAT)
 
     def _get_timestamp(self):
         if self.Clock is None:
@@ -81,12 +84,12 @@ class OutputHandler(object):
         if self.time_valid:
             return self.Clock.get_time_now(DATETIME_FORMAT)
         else:
-            return self._get_datestamp(ntp_reqd=True) + "-" + self.Clock.get_time_now(TIME_FORMAT)
+            return self._get_datestamp(valid_only=True) + "-" + self.Clock.get_time_now(TIME_FORMAT)
             # Keep incorrect time displayed because relative differences still useful in log.
 
     def _create_log_file(self):
-        datestamp = self._get_datestamp(ntp_reqd=False)
-        # If time not yet updated via NTP, this will just append to most recent log - okay
+        datestamp = self._get_datestamp(valid_only=False)
+        # If using sys time and not yet updated via NTP, this will just append to most recent log.
         self.log_filepath = os.path.join(LOG_DIR, "%s.log" % datestamp)
         if not os.path.exists(self.log_filepath):
             # If multiple runs on same day, appends to existing file.
@@ -95,7 +98,8 @@ class OutputHandler(object):
                 pass
 
     def _add_to_log_file(self, print_str):
-        self._create_log_file() # Ensures if date changes while program running, new log entries are written to next day's log.
+        self._create_log_file() # Ensures that if date changes while program running,
+                                # new log entries are written to next day's log.
         with open(self.log_filepath, "a") as log_file:
             log_file.write("%s\n" % print_str)
 
@@ -120,7 +124,17 @@ class OutputHandler(object):
         username = pwd.getpwuid(os.getuid()).pw_name
         # https://stackoverflow.com/a/2899055
         self._add_to_log_file("")
-        self._add_to_log_file("-"*23 + " PROGRAM START [USER: %s, PID: %d] " % (username, os.getpid()) + "-"*20)
+        self._add_to_log_file("-"*23 + " PROGRAM START [USER: %s, PID: %d] "
+                              % (username, os.getpid()) + "-"*20)
+
+    def print_network_status(self):
+        """Outputs name defined in name-mapping dict (not SSID).
+        """
+        network_name = self.Clock.get_network_name()
+        if network_name is not None:
+            self.print_info("Connected to %s." % network_name)
+        else:
+            self.print_info("No network connection.")
 
     def print_temp(self, print_str, prompt_user=False):
         return self._print_and_log("[TEMP]  %s" % print_str, Fore.CYAN, prompt=prompt_user)
@@ -148,20 +162,50 @@ class TimeKeeper(object):
         self.state_change_timer_start = None
         self.shutdown_timer_start = None
 
-        self.valid_sys_time = False
+        self.rtc_time_valid = False
 
-    def get_time_now(self, string_format=None):
+    def set_up_rtc(self):
+        self.rtc = PCF8523(board.I2C())
+        self.check_rtc(log=True)
+
+    def check_rtc(self, log=True):
+        """Check RTC time plausibility. Will fall behind sys time if coin-cell
+        battery dies.
+        """
+        time_now_sys = self.get_time_now(source="sys")
+        time_now_rtc = self.get_time_now(source="rtc")
+        lag_threshold = 60 # seconds
+        if (time_now_sys - time_now_rtc) > dt.timedelta(seconds=lag_threshold):
+            self.rtc_time_valid = False
+            if log:
+                self.Output.print_err("RTC time behind sys time %ds, over %ds threshold. "
+                                      "Falling back to sys time."
+                                       % ((time_now_sys - time_now_rtc).seconds, lag_threshold))
+        else:
+            self.rtc_time_valid = True
+            self.Output.assert_time_valid()
+            if log:
+                self.Output.print_info("Using RTC time.")
+
+    def get_time_now(self, string_format=None, source=None):
         """Returns date and time as datetime object or
         if string_format string arg passed, returns string.
+        If source is set to "rtc" or "sys", will use that data source
+        regardless of status.
         """
-        datetime_now = dt.datetime.now()
+        if self.rtc_time_valid or source == "rtc":
+            datetime_now = dt.datetime.fromtimestamp(time.mktime(self.rtc.datetime))
+        else:
+            datetime_now = dt.datetime.now()
+
         if string_format is not None:
             return datetime_now.strftime(string_format)
         else:
             return datetime_now
 
     def get_network_name(self, log=False):
-        """Uses local file w/ SSID->name dict. Returns name of network as string.
+        """Uses local file w/ SSID->name dict.
+        Returns name of network as string, or None if not connected to any.
         """
         result = subprocess.run(["/usr/sbin/iwgetid", "-r"], capture_output=True, text=True)
         network_ssid = result.stdout.strip()
@@ -169,24 +213,38 @@ class TimeKeeper(object):
             self.Output.print_temp("Network SSID returned by iwgetid: %s" % network_ssid)
         return stored_ssid_mapping_dict.get(network_ssid)
 
+    def is_ntp_syncd(self, log=False):
+        # ntplib.NTPClient().request("pool.ntp.org", timeout=NTP_WAIT_TIME)
+        result = subprocess.run(["/usr/bin/timedatectl", "show", "--property=NTPSynchronized", "--value"],
+                                capture_output=True, text=True)
+        updated = (result.stdout.strip() == "yes")
+        if log and updated:
+            self.Output.print_info("System date/time updated%s."
+                                   % (" (connected to %s)"
+                                      % (self.get_network_name(log=False)) if self.get_network_name(log=log) else ""))
+        elif log:
+            self.Output.print_info("System date/time updated%s."
+                                   % (" (connected to %s)"
+                                      % (self.get_network_name(log=False)) if self.get_network_name(log=log) else ""))
+        return updated
+
     def wait_for_ntp_update(self, log=False):
-        # Establish whether OS has correct time before starting logging.
+        # Provide buffer time for OS to update sys time.
         if log:
             self.Output.print_debug("Checking if sys date/time synchronized to NTP server...")
 
-        # ntplib.NTPClient().request("pool.ntp.org", timeout=NTP_WAIT_TIME)
         # Controller().turn_off_all_ind_leds()
         # Controller().light_red_led(0.5)
         # Controller().light_blue_led(0.5)
         start_time = self.get_time_now()
         while not self._has_time_elapsed(start_time, NTP_WAIT_TIME):
-            result = subprocess.run(["/usr/bin/timedatectl", "show", "--property=NTPSynchronized", "--value"], capture_output=True, text=True)
-            if result.stdout.strip() == "yes":
-                # Takes a few seconds for network name to be returned after connection, so keep trying until can output full info.
+            if self.is_ntp_syncd(log=False):
+                # Takes a few seconds for network name to be returned after connection,
+                # so keep trying until can output full info.
                 # https://forums.raspberrypi.com/viewtopic.php?t=340058
                 self.valid_sys_time = True
                 self.Output.assert_time_valid()
-                self.Output.print_info("System date/time NTP-synchronized%s." % (" (connected to %s)" % (self.get_network_name(log=False)) if self.get_network_name(log=True) else ""))
+                self.is_ntp_syncd(log=True) # Call again just for output
                 break
         # Controller().turn_off_all_ind_leds()
 
@@ -212,7 +270,8 @@ class TimeKeeper(object):
         Controller().turn_off_all_ind_leds()
         self.shutdown_timer_start = self.get_time_now()
         if log:
-            self.Output.print_debug("RPi shutdown timer started at %s." % self.shutdown_timer_start.strftime("%H:%M:%S"))
+            self.Output.print_debug("RPi shutdown timer started at %s."
+                                    % self.shutdown_timer_start.strftime("%H:%M:%S"))
 
     def is_shutdown_pending(self):
         if self.shutdown_timer_start is None:
@@ -246,7 +305,8 @@ class TimeKeeper(object):
         Controller().turn_off_all_ind_leds()
         self.state_change_timer_start = self.get_time_now()
         if log:
-            self.Output.print_debug("Charge-delay timer started (%s) at %s." % (state_change_desc, self.state_change_timer_start.strftime("%H:%M:%S")))
+            self.Output.print_debug("Charge-delay timer started (%s) at %s."
+                                    % (state_change_desc, self.state_change_timer_start.strftime("%H:%M:%S")))
 
     def has_charge_delay_time_elapsed(self):
         """Evaluates if state-delay buffer time has elapsed since last state change.
@@ -500,13 +560,15 @@ class Vehicle(object):
             # Currently being charged, elevating FLA voltage
             elevated = True
             if log:
-                self.Output.print_warn("Starter battery being charged (by aux batt) during FLA battery-voltage reading (elevating value).")
+                self.Output.print_warn("Starter battery being charged (by aux batt) "
+                                       "during FLA battery-voltage reading (elevating value).")
         elif self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_rev():
             # Currently charging aux battery, depressing main voltage.
             # This should only happen while engine running, but if engine shut off after above condition eval'd, this block may run.
             # But in that case, probably not elevated.
             if log:
-                self.Output.print_warn("Charging aux battery during FLA battery-voltage reading (engine should have just stopped).")
+                self.Output.print_warn("Charging aux battery during FLA battery-voltage "
+                                       "reading (engine should have just stopped).")
 
         voltage_est = self.get_main_voltage_raw(log=log)
         if log:
@@ -561,11 +623,13 @@ class Vehicle(object):
             # Currently charging starter battery, depressing aux-batt voltage.
             depressed = True
             if log:
-                self.Output.print_warn("Aux batt charging starter battery during Li battery-voltage reading (depressing value).")
+                self.Output.print_warn("Aux batt charging starter battery during "
+                                       "Li battery-voltage reading (depressing value).")
         elif self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_rev():
             # Currently being charged, elevating aux-batt voltage.
             if log:
-                self.Output.print_warn("Aux batt being charged during Li battery-voltage reading (elevating value).")
+                self.Output.print_warn("Aux batt being charged during Li "
+                                       "battery-voltage reading (elevating value).")
 
         if elevated and depressed:
             output_str = "Vehicle.get_aux_voltage() indicating voltage both elevated and depressed (mutually exclusive)."
@@ -625,9 +689,11 @@ class Vehicle(object):
         est_voltage = self.get_aux_voltage(log=log)
         is_low = est_voltage < threshold
         if log and is_low:
-            self.Output.print_warn("Aux-batt voltage %.2fV below min allowed %.2fV." % (est_voltage, threshold))
+            self.Output.print_warn("Aux-batt voltage %.2fV below min allowed %.2fV."
+                                   % (est_voltage, threshold))
         elif log:
-            self.Output.print_debug("Aux-batt voltage %.2fV sufficient (min allowed: %.2fV)." % (est_voltage, threshold))
+            self.Output.print_debug("Aux-batt voltage %.2fV sufficient (min allowed: %.2fV)."
+                                    % (est_voltage, threshold))
         return is_low
 
     def is_aux_batt_sufficient(self, threshold_override=None, log=False):
@@ -716,7 +782,8 @@ class Vehicle(object):
         ecu_w_signal_high = Controller().is_input_high(self.engine_on_detect_pin)
 
         self.Output.print_info("\tKey %s." % ("@ ACC/ON" if key_acc_powered else "OFF"))
-        self.Output.print_info("\tEngine %s (W signal %s)." % (("ON" if engine_on_state else "OFF"), ("HIGH" if ecu_w_signal_high else "LOW")))
+        self.Output.print_info("\tEngine %s (W signal %s)."
+                               % (("ON" if engine_on_state else "OFF"), ("HIGH" if ecu_w_signal_high else "LOW")))
         self.Output.print_info("\tMain (raw): %.2f" % self.get_main_voltage_raw())
         self.Output.print_info("\tAux (raw): %.2f" % self.get_aux_voltage_raw())
         # self.Output.print_info("\t%s" % (      ("Charging -> FLA (%.2fA)." % charge_current) if charging_fla
@@ -724,8 +791,12 @@ class Vehicle(object):
         self.Output.print_info("\t%s" % (      ("Charging -> FLA.") if charging_fla
                                          else (("Charging -> Li.") if charging_li
                                          else  "Not charging.")))
-        self.Output.print_temp("\tShunt high-side voltage: %.2f" % Controller().read_voltage(CHARGER_INPUT_SHUNT_HIGH_PIN))
-        self.Output.print_temp("\tShunt low-side voltage: %.2f" % Controller().read_voltage(CHARGER_INPUT_SHUNT_LOW_PIN))
+        self.Output.print_temp("\tShunt high-side voltage: %.2f"
+                               % Controller().read_voltage(CHARGER_INPUT_SHUNT_HIGH_PIN))
+        self.Output.print_temp("\tShunt low-side voltage: %.2f"
+                               % Controller().read_voltage(CHARGER_INPUT_SHUNT_LOW_PIN))
+        self.Output.print_network_status()
+
 
 class BatteryCharger(object):
     def __init__(self, Output):

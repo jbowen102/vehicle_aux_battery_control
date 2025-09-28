@@ -22,12 +22,6 @@ def main(Output, Timer):
         Timer.start_shutdown_timer(log=True)
 
     while True:
-        if Timer.is_sys_time_valid():
-            Output.assert_time_valid()
-        elif Timer.get_seconds() == 59:
-            # Re-check every minute. Introduces 2s delay but only outputs if successful.
-            Timer.wait_for_ntp_update(2, log=False)
-            Timer.get_network_name(log=True) # Print if connected to a network.
 
         if (Timer.get_minutes() % 10 == 0) and (Timer.get_seconds() == 43):
             Car.check_wiring() # periodically look for I/O issues.
@@ -154,7 +148,7 @@ if __name__ == "__main__":
     Output = OutputHandler()
     Timer = TimeKeeper(Output)
     Output.assoc_clock(Timer)
-    Timer.wait_for_ntp_update(log=True)
+    Timer.set_up_rtc()
 
     try:
         main(Output, Timer)
