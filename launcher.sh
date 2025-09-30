@@ -22,15 +22,18 @@ chown "${USERNAME}" "${LOG_PATH}"
 
 # If USB unplugged from RPi, don't run program.
 KILLSWITCH_USB="USB-01"
-if [ ! -e "/media/${USERNAME}/${KILLSWITCH_USB}" ]; then
-
-    NTP_SYNCD="$(/usr/bin/timedatectl show --property=NTPSynchronized --value)"
-    if [ "$NTP_SYNCD" = "yes" ]; then
-        # Returned empty string
-        TIMESTAMP="$(date "+%Y%m%dT%H%M%S")"
-    else
-        TIMESTAMP="---------$(date "+%H%M%S")"
-    fi
+if [ -d "/media/${USERNAME}/${KILLSWITCH_USB}" ]; then
+    cd "${PROGRAM_ROOT}"
+    python event_loop.py
+else
+    # NTP_SYNCD="$(/usr/bin/timedatectl show --property=NTPSynchronized --value)"
+    # if [ "$NTP_SYNCD" = "yes" ]; then
+    #     # Returned empty string
+    #     TIMESTAMP="$(date "+%Y%m%dT%H%M%S")"
+    # else
+    #     TIMESTAMP="---------$(date "+%H%M%S")"
+    # fi
+    TIMESTAMP="$(date "+%Y%m%dT%H%M%S")" # Assume RTC time valid
 
     echo "${SCRIPT_NAME}: ${KILLSWITCH_USB} not present."
 
@@ -40,7 +43,4 @@ if [ ! -e "/media/${USERNAME}/${KILLSWITCH_USB}" ]; then
     exit 254
     # Don't shut down RPi.
     # https://medium.com/@himanshurahangdale153/list-of-exit-status-codes-in-linux-f4c00c46c9e0
-else
-    cd "${PROGRAM_ROOT}"
-    python event_loop.py
 fi
