@@ -16,11 +16,11 @@ from control_params import ALTERNATOR_OUTPUT_V_MIN, \
                            MAIN_V_MIN, MAIN_V_MAX, \
                            MAIN_V_CHARGED, \
                            AUX_V_MIN, AUX_V_MAX, \
-                           MIN_CHARGE_CURRENT, \
+                           MIN_CHARGE_CURRENT_A, \
                            RPI_SHUTDOWN_DELAY_SEC, \
                            STATE_CHANGE_DELAY_SEC, \
                            VOLTAGE_STABILIZATION_TIME_SEC, \
-                           NTP_WAIT_TIME, RTC_LAG_THRESHOLD
+                           NTP_WAIT_TIME_SEC, RTC_LAG_THRESHOLD_SEC
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -167,6 +167,8 @@ class TimeKeeper(object):
         self.shutdown_timer_start = None
         self.charge_start_time = None
 
+        self.state_change_delay_time = STATE_CHANGE_DELAY_SEC
+
     def set_up_rtc(self):
         self.rtc = PCF8523(board.I2C())
         self.check_rtc(log=True)
@@ -178,12 +180,12 @@ class TimeKeeper(object):
         """
         # if (time_now_sys - time_now_rtc) > dt.timedelta(seconds=lag_threshold):
         rtc_lag = self.get_rtc_lag()
-        if rtc_lag > dt.timedelta(seconds=RTC_LAG_THRESHOLD):
+        if rtc_lag > dt.timedelta(seconds=RTC_LAG_THRESHOLD_SEC):
             self.rtc_time_valid = False
             if log:
                 self.Output.print_err("RTC time behind sys time %ds, over %ds threshold. "
                                       "Falling back to sys time."
-                                       % (rtc_lag, RTC_LAG_THRESHOLD))
+                                       % (rtc_lag, RTC_LAG_THRESHOLD_SEC))
             self.wait_for_ntp_update()
         else:
             self.rtc_time_valid = True
@@ -248,7 +250,7 @@ class TimeKeeper(object):
         return stored_ssid_mapping_dict.get(network_ssid)
 
     def is_ntp_syncd(self, log=False):
-        # ntplib.NTPClient().request("pool.ntp.org", timeout=NTP_WAIT_TIME)
+        # ntplib.NTPClient().request("pool.ntp.org", timeout=NTP_WAIT_TIME_SEC)
         result = subprocess.run(["/usr/bin/timedatectl", "show", "--property=NTPSynchronized", "--value"],
                                 capture_output=True, text=True)
         updated = (result.stdout.strip() == "yes")
@@ -309,8 +311,8 @@ class TimeKeeper(object):
         Controller().turn_off_all_ind_leds()
         self.shutdown_timer_start = self.get_time_now()
         if log:
-            self.Output.print_debug("RPi shutdown timer started at %s."
-                                    % self.shutdown_timer_start.strftime("%H:%M:%S"))
+            self.Output.print_debug("RPi shutdown timer (%ds) started at %s."
+                                    % (RPI_SHUTDOWN_DELAY_SEC, self.shutdown_timer_start.strftime("%H:%M:%S")))
 
     def is_shutdown_pending(self):
         if self.shutdown_timer_start is None:
@@ -338,14 +340,25 @@ class TimeKeeper(object):
                 self.Output.print_debug("Shutdown-delay time has elapsed.")
             return is_time_up
 
-    def start_charge_delay_timer(self, state_change_desc, log=True):
-        """If called while timer already running, timer restarts.
+    def start_charge_delay_timer(self, state_change_desc, delay_s=STATE_CHANGE_DELAY_SEC, log=True):
+        """If called while timer already running, timer restarts iff result is extended delay.
+        If delay_s parameter specified (int representing seconds), overrides default delay
+        unless it would shorten delay time. Longer delay takes precedence.
         """
-        Controller().turn_off_all_ind_leds()
-        self.state_change_timer_start = self.charge_start_time = self.get_time_now()
-        if log:
-            self.Output.print_debug("Charge-delay timer started (%s) at %s."
-                                    % (state_change_desc, self.state_change_timer_start.strftime("%H:%M:%S")))
+        if (self.get_time_now() + dt.timedelta(seconds=delay_s)) >= (self.state_change_timer_start + self.state_change_delay_time):
+            self.state_change_delay_time = delay_s
+            Controller().turn_off_all_ind_leds()
+            self.state_change_timer_start = self.charge_start_time = self.get_time_now()
+            if log:
+                self.Output.print_debug("Charge delay of %ds started (%s) at %s."
+                                        % (self.state_change_delay_time,
+                                           state_change_desc,
+                                           self.state_change_timer_start.strftime("%H:%M:%S")))
+        elif log:
+            self.Output.print_debug("New charge delay of %ds ignored (%s) - inside existing %ds delay started at %s."
+                                    % (delay_s, state_change_desc,
+                                       self.state_change_delay_time,
+                                       self.state_change_timer_start.strftime("%H:%M:%S")))
 
     def has_charge_delay_time_elapsed(self):
         """Evaluates if state-delay buffer time has elapsed since last state change.
@@ -360,7 +373,7 @@ class TimeKeeper(object):
             # Don't allow charge initiation while shutdown timer active.
             return (False, False)
         else:
-            is_time_up = self._has_time_elapsed(self.state_change_timer_start, STATE_CHANGE_DELAY_SEC)
+            is_time_up = self._has_time_elapsed(self.state_change_timer_start, self.state_change_delay_time)
             if is_time_up:
                 self.state_change_timer_start = None
                 Controller().turn_off_all_ind_leds()
@@ -525,7 +538,7 @@ class Vehicle(object):
             raise SystemVoltageError(output_str)
 
         # TODO - FIX
-        # if self.BattCharger.is_charging() and self.BattCharger.get_charge_current() < MIN_CHARGE_CURRENT:
+        # if self.BattCharger.is_charging() and self.BattCharger.get_charge_current() < MIN_CHARGE_CURRENT_A:
         #     output_str = "No charge current detected despite charging (reading %.2fA)." % self.BattCharger.get_charge_current()
         #     self.Output.print_err(output_str)
         #     raise ChargeControlError(output_str)
@@ -813,9 +826,8 @@ class Vehicle(object):
         if log and charging_was_active:
             self.Output.print_info("Stopped charging.")
 
-    def shut_down_controller(self):
+    def shut_down_controller(self, delay=5):
         Controller().turn_off_all_ind_leds()
-        delay = 5
         self.Output.print_warn("Shutting down controller in %d seconds." % delay)
         Controller().shut_down(delay_s=delay)
 
