@@ -730,7 +730,10 @@ class Vehicle(object):
         return is_low
 
     def is_starter_batt_charged(self, log=False):
-        return (self.get_main_voltage(log=log) >= MAIN_V_CHARGED)
+        if not self.Timer.is_sys_voltage_stable():
+            return True
+        else:
+            return (self.get_main_voltage(log=log) >= MAIN_V_CHARGED)
 
     def does_starter_batt_need_charge(self, log=False):
         return not self.is_starter_batt_charged(log=log)
