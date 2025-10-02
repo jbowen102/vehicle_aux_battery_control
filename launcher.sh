@@ -21,8 +21,10 @@ chown "${USERNAME}" "${LOG_PATH}"
 # Will fail if script hasn't been run by root since date updated to today.
 
 # If USB unplugged from RPi, don't run program.
-KILLSWITCH_USB="USB-01"
-if [ -d "/media/${USERNAME}/${KILLSWITCH_USB}" ]; then
+KILLSWITCH_DEV="USB-01"
+KILLSWITCH_PATH="/media/${USERNAME}/${KILLSWITCH_DEV}/logs_BU"
+
+if [ -d "${KILLSWITCH_PATH}" ]; then
     cd "${PROGRAM_ROOT}"
     python event_loop.py
 else
@@ -35,10 +37,10 @@ else
     # fi
     TIMESTAMP="$(date "+%Y%m%dT%H%M%S")" # Assume RTC time valid
 
-    echo "${SCRIPT_NAME}: ${KILLSWITCH_USB} not present."
+    echo "${SCRIPT_NAME}: ${KILLSWITCH_DEV} not present."
 
     echo "\n----------------------- ABORT " >> "${LOG_PATH}"
-    echo "${TIMESTAMP} [ERROR] ${SCRIPT_NAME}: ${KILLSWITCH_USB} not present." >> "${LOG_PATH}"
+    echo "${TIMESTAMP} [ERROR] ${SCRIPT_NAME}: ${KILLSWITCH_DEV} not present." >> "${LOG_PATH}"
     echo "-----------------------" >> "${LOG_PATH}"
     exit 254
     # Don't shut down RPi.
