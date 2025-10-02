@@ -196,8 +196,8 @@ class TimeKeeper(object):
         # self.Output.print_debug("RTC time: %s" % self.get_time_now(string_format=DATETIME_FORMAT, source="rtc"))
         return (time_now_sys - time_now_rtc)
 
-    def update_rtc(self, log=True):
-        if not self.is_ntp_syncd(log=False):
+    def update_rtc(self, wait=False, log=True):
+        if wait and not self.is_ntp_syncd(log=False):
             self.wait_for_ntp_update(log=True)
 
         if self.is_ntp_syncd(log=False):
@@ -824,6 +824,7 @@ class Vehicle(object):
             self.Output.print_info("Stopped charging.")
 
     def shut_down_controller(self, delay=5):
+        self.Timer.update_rtc(wait=False, log=True) # Use system time to update RTC if sync'd w/ NTP.
         Controller().turn_off_all_ind_leds()
         self.Output.print_warn("Shutting down controller in %d seconds." % delay)
         Controller().shut_down(delay_s=delay)

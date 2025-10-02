@@ -149,7 +149,6 @@ if __name__ == "__main__":
     Timer = Output.Clock    # TimeKeeper object created in Output.__init__()
     Timer.check_rtc(log=False)
     Timer.check_rtc(log=True)  # Call second time w/ logging after first call establishes what time source to use for output/log.
-    Timer.update_rtc(log=True)
 
     try:
         main(Output, Timer)
