@@ -24,6 +24,7 @@ chown "${USERNAME}" "${LOG_PATH}"
 KILLSWITCH_DEV="USB-01"
 KILLSWITCH_PATH="/media/${USERNAME}/${KILLSWITCH_DEV}/logs_BU"
 
+sleep 10 # need delay for drive to mount
 if [ -d "${KILLSWITCH_PATH}" ]; then
     cd "${PROGRAM_ROOT}"
     python event_loop.py
