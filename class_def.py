@@ -339,7 +339,10 @@ class TimeKeeper(object):
         If delay_s parameter specified (int representing seconds), overrides default delay
         unless it would shorten delay time. Longer delay takes precedence.
         """
-        if (self.get_time_now() + dt.timedelta(seconds=delay_s)) >= (self.state_change_timer_start + self.state_change_delay_time):
+
+        if (self.state_change_timer_start is None
+              or (    self.get_time_now() + dt.timedelta(seconds=delay_s))
+                  >= (self.state_change_timer_start + dt.timedelta(seconds=self.state_change_delay_time))):
             self.state_change_delay_time = delay_s
             Controller().turn_off_all_ind_leds()
             self.state_change_timer_start = self.charge_start_time = self.get_time_now()

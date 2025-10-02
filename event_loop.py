@@ -178,6 +178,7 @@ if __name__ == "__main__":
     except:
         Output.print_shutdown("Program killed by OS.")
     finally:
-        Controller().open_all_relays() # Does this run when program shut down by SIGTERM?
+        # This block runs even when program shut down by SIGTERM.
+        Controller().open_all_relays()
         # Output.print_warn("Shutting down controller.")
         # Controller().shut_down(delay_s=20)
