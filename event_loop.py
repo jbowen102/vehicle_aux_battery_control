@@ -146,9 +146,10 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, Controller().sigterm_handler) # method that turns off LEDs and relays and exits Python script
 
     Output = OutputHandler()
-    Timer = TimeKeeper(Output)
-    Output.assoc_clock(Timer)
-    Timer.set_up_rtc()
+    Timer = Output.Clock    # TimeKeeper object created in Output.__init__()
+    Timer.check_rtc(log=False)
+    Timer.check_rtc(log=True)  # Call second time w/ logging after first call establishes what time source to use for output/log.
+    Timer.update_rtc(log=True)
 
     try:
         main(Output, Timer)

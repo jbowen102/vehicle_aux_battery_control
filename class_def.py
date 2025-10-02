@@ -58,10 +58,8 @@ class SystemVoltageError(Exception):
 class OutputHandler(object):
     def __init__(self):
         self.time_valid = False
-        self.Clock = None # External TimeKeeper object must be associated to self.Clock w/ below method before using any of this class's methods.
+        self.Clock = TimeKeeper(self)
 
-    def assoc_clock(self, Clock):
-        self.Clock = Clock
         self._create_log_file()
         self._print_startup()
 
@@ -168,11 +166,7 @@ class TimeKeeper(object):
         self.charge_start_time = None
 
         self.state_change_delay_time = STATE_CHANGE_DELAY_SEC
-
-    def set_up_rtc(self):
         self.rtc = PCF8523(board.I2C())
-        self.check_rtc(log=True)
-        self.update_rtc(log=True)
 
     def check_rtc(self, log=True):
         """Check RTC time plausibility. Will fall behind sys time if coin-cell
