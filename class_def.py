@@ -210,6 +210,11 @@ class TimeKeeper(object):
                 if log:
                     self.Output.print_debug("Updated RTC time (%s -> %s) from NTP-syncd sys time."
                                             % (prev_time, new_time))
+            elif log:
+                self.Output.print_debug("No RTC update needed:")
+                self.Output.print_debug("\tRTC time: %s" % self.get_time_now(string_format=DATETIME_FORMAT, source="rtc"))
+                self.Output.print_debug("\tSys time: %s" % self.get_time_now(string_format=DATETIME_FORMAT, source="sys"))
+
         elif log:
             self.Output.print_debug("Not updating RTC time since sys time not syncd with NTP.")
         # Does not set self.rtc_time_valid to True. Will be False if check_rtc() failed.
@@ -220,7 +225,7 @@ class TimeKeeper(object):
         If source is set to "rtc" or "sys", will use that data source
         regardless of status.
         """
-        if self.rtc_time_valid or source == "rtc":
+        if self.rtc_time_valid and source == "rtc":
             datetime_now = dt.datetime.fromtimestamp(time.mktime(self.rtc.datetime))
         else:
             datetime_now = dt.datetime.now()
