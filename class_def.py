@@ -766,7 +766,7 @@ class Vehicle(object):
             self.Output.print_debug("Aux batt full (%.2fV)" % est_voltage)
         return is_full
 
-    def charge_starter_batt(self, log=True):
+    def charge_starter_batt(self, log=True, post_delay=False):
         if self.is_aux_batt_empty(log=False):
             output_str = "Called Vehicle.charge_starter_batt(), " \
                          "but aux batt V (%.2fV) is below min threshold %.2fV." \
@@ -786,8 +786,10 @@ class Vehicle(object):
         Controller().toggle_blue_led()
         if log:
             self.Output.print_info("Charging starter battery.")
+        if post_delay:
+            time.sleep(VOLTAGE_STABILIZATION_TIME_SEC)
 
-    def charge_aux_batt(self, log=False):
+    def charge_aux_batt(self, log=False, post_delay=False):
         if not self.is_starter_batt_charged():
             # Only want to charge with engine running. Sometimes engine stops after
             # event loop already called this method (when engine was running), so
@@ -809,6 +811,8 @@ class Vehicle(object):
 
         if log:
             self.Output.print_info("Charging auxiliary battery.")
+        if post_delay:
+            time.sleep(VOLTAGE_STABILIZATION_TIME_SEC)
 
     def roll_indicator_light(self, led_fxn):
         """Increment brightness to produce glowing effect.

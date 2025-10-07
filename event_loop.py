@@ -103,14 +103,14 @@ def main(Output, Timer):
                 if Car.is_aux_batt_full(log=first_time_ind):
                     Timer.start_charge_delay_timer("aux battery full already", delay_s=600)
                 else:
-                    Car.charge_aux_batt(log=first_time_ind)
+                    Car.charge_aux_batt(log=first_time_ind, post_delay=first_time_ind)
 
             elif key_acc_powered:
                 # Key in ACC or ON but engine off.
                 if first_time_ind:
                     Output.print_info("State: Key in ACC or ON; engine off.")
                 if Car.is_aux_batt_sufficient(log=first_time_ind):
-                    Car.charge_starter_batt(log=first_time_ind)
+                    Car.charge_starter_batt(log=first_time_ind, post_delay=first_time_ind)
                 else:
                     # If Li batt V low, power down RPi.
                     Car.is_aux_batt_sufficient(log=True) # Call again just for logging
@@ -139,7 +139,7 @@ def main(Output, Timer):
                 #     break
                 else:
                     # Keep charging while FLA batt needs charge and Li batt V sufficient.
-                    Car.charge_starter_batt(log=first_time_ind)
+                    Car.charge_starter_batt(log=first_time_ind, post_delay=first_time_ind)
 
 
 if __name__ == "__main__":
