@@ -63,6 +63,10 @@ class OutputHandler(object):
         self._create_log_file()
         self._print_startup()
 
+        self.Clock.check_rtc(log=False)
+        self.Clock.check_rtc(log=True)
+        # Call second time w/ logging after first call establishes what time source to use for output/log.
+
     def assert_time_valid(self):
         self.time_valid = True
 
@@ -150,7 +154,7 @@ class OutputHandler(object):
     def print_err(self, print_str, prompt_user=False):
         return self._print_and_log("[ERROR] %s" % print_str, Fore.RED, prompt=prompt_user)
 
-    def print_shutdown(self, error_msg):
+    def print_exit(self, error_msg):
         self.print_err(error_msg)
         self.print_debug("[PID %d killed]" % os.getpid())
 

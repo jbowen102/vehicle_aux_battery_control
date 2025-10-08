@@ -145,40 +145,40 @@ def main(Output, Timer):
 if __name__ == "__main__":
     signal.signal(signal.SIGTERM, Controller().sigterm_handler) # method that turns off LEDs and relays and exits Python script
 
-    Output = OutputHandler()
-    Timer = Output.Clock    # TimeKeeper object created in Output.__init__()
-    Timer.check_rtc(log=False)
-    Timer.check_rtc(log=True)  # Call second time w/ logging after first call establishes what time source to use for output/log.
+    while True:
+        Output = OutputHandler()
+        Timer = Output.Clock     # TimeKeeper object created in OutputHandler.__init__()
 
-    try:
-        main(Output, Timer)
-    except TimeoutError:
-        # Thrown by automationhat - "Timed out waiting for conversion."
-        # Not sure what's causing it yet. Doesn't usually persist across reboot though.
-        Output.print_err(traceback.format_exc())
-        delay = 20
-        Output.print_err("Rebooting controller in %d seconds (TimeoutError caught)." % delay)
-        Controller().reboot(delay_s=delay)
-    except OSError as e:
-        # This block seems to catch other errors unintentionally, so have to be more specific.
-        if e.errno in [5, 16]:
-            # "OSError: [Errno 5] Input/output error" | Thrown when AutomationHAT absent.
-            # "OSError: [Errno 16] Device or resource busy" | Thrown by AutomationHAT. Not sure what's causing it yet. Doesn't usually persist across reboot though.
+        try:
+            main(Output, Timer)
+        except TimeoutError:
+            # Thrown by AutomationHAT - "Timed out waiting for conversion."
+            # Seems to be caused by system acquiring NTP sync, jumping system time, and some mechanics in AutomationHAT code infer an op timed out.
             Output.print_err(traceback.format_exc())
-            delay = 20
-            Output.print_err("Rebooting controller in %d seconds (OSError caught)." % delay)
-            Controller().reboot(delay_s=delay)
-        else:
-            # If something else, just kill program and don't reboot.
-            Output.print_shutdown(traceback.format_exc())
-    except KeyboardInterrupt:
-        Output.print_shutdown("Keyboard interrupt.")
-    except Exception:
-        Output.print_shutdown(traceback.format_exc())
-    except:
-        Output.print_shutdown("Program killed by OS.")
-    finally:
-        # This block runs even when program shut down by SIGTERM.
-        Controller().open_all_relays()
-        # Output.print_warn("Shutting down controller.")
-        # Controller().shut_down(delay_s=20)
+            Output.print_err("Restarting program (TimeoutError caught)." % delay)
+            continue
+        except OSError as e:
+            # This block seems to catch other errors unintentionally, so have to be more specific.
+            if e.errno == 16:
+                # "OSError: [Errno 16] Device or resource busy" | Thrown by AutomationHAT. May be caused by system acquiring NTP sync,
+                #                                                 jumping system time, and some mechanics in AutomationHAT code infer an op timed out.
+                Output.print_err(traceback.format_exc())
+                Output.print_err("Restarting program (OSError 16 caught)." % delay)
+                continue
+                # "OSError: [Errno 5] Input/output error" thrown when AutomationHAT absent. Handle below.
+            else:
+                Output.print_exit(traceback.format_exc())
+                Controller().open_all_relays()
+                break
+        except KeyboardInterrupt:
+            Output.print_exit("Keyboard interrupt.")
+            Controller().open_all_relays()
+            break
+        except Exception:
+            Output.print_exit(traceback.format_exc())
+            Controller().open_all_relays()
+            break
+        except:
+            Output.print_exit("Program killed by OS.")
+            Controller().open_all_relays()
+            break
