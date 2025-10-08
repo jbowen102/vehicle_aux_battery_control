@@ -66,9 +66,13 @@ def main(Output, Timer):
         elif not Car.is_acc_powered() and key_acc_powered:
             Output.print_info("Key switched from ACC to OFF.")
             key_acc_powered = False
-            engine_on_state = False
             Car.stop_charging()
-            Timer.start_charge_delay_timer("key ACC -> OFF", delay_s=5)
+            if not engine_on_state:
+                # Engine already off. Can use shorter delay.
+                Timer.start_charge_delay_timer("key ACC -> OFF", delay_s=5)
+            else:
+                engine_on_state = False
+                Timer.start_charge_delay_timer("engine stopped, key ACC -> OFF")
             continue
 
         elif not Car.is_engine_running() and engine_on_state:
