@@ -486,8 +486,11 @@ class Controller(object):
             pass
         finally:
             time.sleep(delay_s) # give time for user to connect over SSH and stop boot loop.
-            subprocess.run(["/usr/bin/sudo", "usr/sbin/reboot"],
+            subprocess.run(["/usr/bin/sudo", "/usr/sbin/reboot", "-h", "now"],
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            # The below line won't normally run, but in case there's a problem w/
+            # the subprocess call, this at least makes sure the program exits.
+            sys.exit(250) # https://medium.com/@himanshurahangdale153/list-of-exit-status-codes-in-linux-f4c00c46c9e0
 
     def shut_down(self, delay_s):
         try:
@@ -499,9 +502,12 @@ class Controller(object):
             pass
         finally:
             time.sleep(delay_s) # give time for user to connect over SSH and stop boot loop.
-            subprocess.run(["/usr/bin/sudo", "usr/sbin/shutdown", "-h", "now"],
+            subprocess.run(["/usr/bin/sudo", "/usr/sbin/shutdown", "-h", "now"],
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             # https://learn.sparkfun.com/tutorials/raspberry-pi-safe-reboot-and-shutdown-button/all
+            # The below line won't normally run, but in case there's a problem w/
+            # the subprocess call, this at least makes sure the program exits.
+            sys.exit(250)
 
     def sigterm_handler(self, _signo, _stack_frame):
         """Pipe kill signal from Linux to this Python script to allow graceful exit.

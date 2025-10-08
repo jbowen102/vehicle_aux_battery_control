@@ -155,6 +155,7 @@ if __name__ == "__main__":
 
         try:
             main(Output, Timer)
+            break
         except TimeoutError:
             # Thrown by AutomationHAT - "Timed out waiting for conversion."
             # Seems to be caused by system acquiring NTP sync, jumping system time, and some mechanics in AutomationHAT code infer an op timed out.
