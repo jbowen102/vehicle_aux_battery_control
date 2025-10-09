@@ -28,7 +28,14 @@ KILLSWITCH_PATH="/media/${USERNAME}/${KILLSWITCH_DEV}/logs_BU"
 sleep 10 # need delay for drive to mount
 if [ -d "${KILLSWITCH_PATH}" ]; then
     cd "${PROGRAM_ROOT}"
-    python event_loop.py
+    while :
+    do
+        python event_loop.py
+        EVENT_LOOP_RETURN=$? # gets return value of last command executed.
+        if [ ${EVENT_LOOP_RETURN} -ne 109 ]; then
+            break
+        # Repeat call if program returns specific exit status indicating to restart.
+    done
 else
     # NTP_SYNCD="$(/usr/bin/timedatectl show --property=NTPSynchronized --value)"
     # if [ "$NTP_SYNCD" = "yes" ]; then

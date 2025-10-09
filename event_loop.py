@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import signal
 import traceback
@@ -149,41 +150,35 @@ def main(Output, Timer):
 if __name__ == "__main__":
     signal.signal(signal.SIGTERM, Controller().sigterm_handler) # method that turns off LEDs and relays and exits Python script
 
-    while True:
-        Output = OutputHandler()
-        Timer = Output.Clock     # TimeKeeper object created in OutputHandler.__init__()
+    Output = OutputHandler()
+    Timer = Output.Clock     # TimeKeeper object created in OutputHandler.__init__()
 
-        try:
-            main(Output, Timer)
-            break
-        except TimeoutError:
-            # Thrown by AutomationHAT - "Timed out waiting for conversion."
-            # Seems to be caused by system acquiring NTP sync, jumping system time, and some mechanics in AutomationHAT code infer an op timed out.
+    try:
+        main(Output, Timer)
+    except TimeoutError:
+        # Thrown by AutomationHAT - "Timed out waiting for conversion."
+        # Seems to be caused by system acquiring NTP sync, jumping system time, and some mechanics in AutomationHAT code infer an op timed out.
+        Output.print_err(traceback.format_exc())
+        Output.print_err("Restarting program (TimeoutError caught)." % delay)
+        sys.exit(109) # https://medium.com/@himanshurahangdale153/list-of-exit-status-codes-in-linux-f4c00c46c9e0
+    except OSError as e:
+        # This block seems to catch other errors unintentionally, so have to be more specific.
+        if e.errno == 16:
+            # "OSError: [Errno 16] Device or resource busy" | Thrown by AutomationHAT. May be caused by system acquiring NTP sync,
+            #                                                 jumping system time, and some mechanics in AutomationHAT code infer an op timed out.
             Output.print_err(traceback.format_exc())
-            Output.print_err("Restarting program (TimeoutError caught)." % delay)
-            continue
-        except OSError as e:
-            # This block seems to catch other errors unintentionally, so have to be more specific.
-            if e.errno == 16:
-                # "OSError: [Errno 16] Device or resource busy" | Thrown by AutomationHAT. May be caused by system acquiring NTP sync,
-                #                                                 jumping system time, and some mechanics in AutomationHAT code infer an op timed out.
-                Output.print_err(traceback.format_exc())
-                Output.print_err("Restarting program (OSError 16 caught)." % delay)
-                continue
-                # "OSError: [Errno 5] Input/output error" thrown when AutomationHAT absent. Handle below.
-            else:
-                Output.print_exit(traceback.format_exc())
-                Controller().open_all_relays()
-                break
-        except KeyboardInterrupt:
-            Output.print_exit("Keyboard interrupt.")
-            Controller().open_all_relays()
-            break
-        except Exception:
+            Output.print_err("Restarting program (OSError 16 caught)." % delay)
+            sys.exit(109)
+            # "OSError: [Errno 5] Input/output error" thrown when AutomationHAT absent. Handle below.
+        else:
             Output.print_exit(traceback.format_exc())
             Controller().open_all_relays()
-            break
-        except:
-            Output.print_exit("Program killed by OS.")
-            Controller().open_all_relays()
-            break
+    except KeyboardInterrupt:
+        Output.print_exit("Keyboard interrupt.")
+        Controller().open_all_relays()
+    except Exception:
+        Output.print_exit(traceback.format_exc())
+        Controller().open_all_relays()
+    except:
+        Output.print_exit("Program killed by OS.")
+        Controller().open_all_relays()
