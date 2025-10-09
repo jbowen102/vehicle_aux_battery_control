@@ -160,6 +160,7 @@ if __name__ == "__main__":
         # Seems to be caused by system acquiring NTP sync, jumping system time, and some mechanics in AutomationHAT code infer an op timed out.
         Output.print_err(traceback.format_exc())
         Output.print_err("Restarting program (TimeoutError caught)." % delay)
+        Controller().open_all_relays()
         sys.exit(109) # https://medium.com/@himanshurahangdale153/list-of-exit-status-codes-in-linux-f4c00c46c9e0
     except OSError as e:
         # This block seems to catch other errors unintentionally, so have to be more specific.
@@ -168,6 +169,7 @@ if __name__ == "__main__":
             #                                                 jumping system time, and some mechanics in AutomationHAT code infer an op timed out.
             Output.print_err(traceback.format_exc())
             Output.print_err("Restarting program (OSError 16 caught)." % delay)
+            Controller().open_all_relays()
             sys.exit(109)
             # "OSError: [Errno 5] Input/output error" thrown when AutomationHAT absent. Handle below.
         else:

@@ -34,6 +34,7 @@ if [ -d "${KILLSWITCH_PATH}" ]; then
         EVENT_LOOP_RETURN=$? # gets return value of last command executed.
         if [ ${EVENT_LOOP_RETURN} -ne 109 ]; then
             break
+        fi
         # Repeat call if program returns specific exit status indicating to restart.
     done
 else

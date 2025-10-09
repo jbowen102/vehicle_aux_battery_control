@@ -162,7 +162,7 @@ class OutputHandler(object):
 class TimeKeeper(object):
     def __init__(self, Output):
         self.Output = Output
-        self.rtc_time_valid = False
+        self.rtc_time_valid = True # start w/ assumption that RTC up to date.
         self.sys_time_valid = False
 
         self.state_change_timer_start = None
