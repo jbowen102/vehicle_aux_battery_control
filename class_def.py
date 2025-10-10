@@ -130,6 +130,11 @@ class OutputHandler(object):
         self._add_to_log_file("-"*23 + " PROGRAM START [USER: %s, PID: %d] "
                               % (username, os.getpid()) + "-"*20)
 
+    def print_rtc_and_sys_time(self, preface):
+        self.print_debug("%s:" % preface)
+        self.print_debug("\tRTC time: %s" % self.Clock.get_time_now(string_format=DATETIME_FORMAT, source="rtc"))
+        self.print_debug("\tSys time: %s" % self.Clock.get_time_now(string_format=DATETIME_FORMAT, source="sys"))
+
     def print_network_status(self):
         """Outputs name defined in name-mapping dict (not SSID).
         """
@@ -162,15 +167,15 @@ class OutputHandler(object):
 class TimeKeeper(object):
     def __init__(self, Output):
         self.Output = Output
-        self.rtc_time_valid = True # start w/ assumption that RTC up to date.
-        self.sys_time_valid = False
+        self.state_change_delay_time = STATE_CHANGE_DELAY_SEC # default able to be overridden
 
         self.state_change_timer_start = None
         self.shutdown_timer_start = None
         self.charge_start_time = None
 
-        self.state_change_delay_time = STATE_CHANGE_DELAY_SEC
         self.rtc = PCF8523(board.I2C())
+        self.rtc_time_valid = True # start w/ assumption that RTC up to date.
+        self.sys_time_valid = False
 
     def check_rtc(self, log=True):
         """Check RTC time plausibility. Will fall behind sys time if coin-cell
@@ -181,6 +186,7 @@ class TimeKeeper(object):
         if rtc_lag > dt.timedelta(seconds=RTC_LAG_THRESHOLD_SEC):
             self.rtc_time_valid = False
             if log:
+                self.Output.print_rtc_and_sys_time("Startup time compare")
                 self.Output.print_err("RTC time behind sys time %ds, over %ds threshold. "
                                       "Falling back to sys time."
                                        % (rtc_lag, RTC_LAG_THRESHOLD_SEC))
@@ -189,6 +195,7 @@ class TimeKeeper(object):
             self.rtc_time_valid = True
             self.Output.assert_time_valid()
             if log:
+                self.Output.print_rtc_and_sys_time("Startup time compare")
                 self.Output.print_info("Using RTC time.")
 
     def get_rtc_lag(self):
@@ -215,9 +222,7 @@ class TimeKeeper(object):
                     self.Output.print_debug("Updated RTC time (%s -> %s) from NTP-syncd sys time."
                                             % (prev_time, new_time))
             elif log:
-                self.Output.print_debug("No RTC update needed:")
-                self.Output.print_debug("\tRTC time: %s" % self.get_time_now(string_format=DATETIME_FORMAT, source="rtc"))
-                self.Output.print_debug("\tSys time: %s" % self.get_time_now(string_format=DATETIME_FORMAT, source="sys"))
+                self.Output.print_rtc_and_sys_time("No RTC update needed")
 
         elif log:
             self.Output.print_debug("Not updating RTC time since sys time not syncd with NTP.")
