@@ -321,6 +321,7 @@ class TimeKeeper(object):
         if log:
             self.Output.print_debug("RPi shutdown timer (%ds) started at %s."
                                     % (RPI_SHUTDOWN_DELAY_SEC, self.shutdown_timer_start.strftime("%H:%M:%S")))
+        time.sleep(1) # Avoid catching multiple state transitions during some transient condition not yet characterized.
 
     def is_shutdown_pending(self):
         if self.shutdown_timer_start is None:
@@ -365,6 +366,7 @@ class TimeKeeper(object):
                                         % (self.state_change_delay_time,
                                            state_change_desc,
                                            self.state_change_timer_start.strftime("%H:%M:%S")))
+            time.sleep(1) # Avoid catching multiple state transitions during voltage ripple.
         elif log:
             self.Output.print_debug("New charge delay of %ds ignored (%s) - inside existing %ds delay started at %s."
                                     % (delay_s, state_change_desc,
