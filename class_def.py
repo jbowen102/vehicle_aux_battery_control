@@ -234,7 +234,7 @@ class TimeKeeper(object):
         If source is set to "rtc" or "sys", will use that data source
         regardless of status.
         """
-        if self.rtc_time_valid and source == "rtc":
+        if self.rtc_time_valid or source == "rtc":
             datetime_now = dt.datetime.fromtimestamp(time.mktime(self.rtc.datetime))
         else:
             datetime_now = dt.datetime.now()
@@ -880,6 +880,7 @@ class Vehicle(object):
         self.Output.print_temp("\tShunt low-side voltage:  %.2f"
                                % Controller().read_voltage(CHARGER_INPUT_SHUNT_LOW_PIN))
         self.Output.print_network_status()
+        self.Output.print_rtc_and_sys_time("Time compare (periodic)")
 
 
 class BatteryCharger(object):
