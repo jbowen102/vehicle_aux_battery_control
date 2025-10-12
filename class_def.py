@@ -7,6 +7,10 @@ import subprocess
 import ntplib
 from colorama import Style, Fore, Back
 
+import sqlite3
+import pandas as pd
+from sqlalchemy import create_engine, text
+
 import automationhat as ah
 from adafruit_pcf8523.pcf8523 import PCF8523
 import board
@@ -404,6 +408,75 @@ class TimeKeeper(object):
         else:
             return False
         # https://www.tutorialspoint.com/How-can-we-do-date-and-time-math-in-Python
+
+
+class DataLogger(object):
+    def __init__(self):
+        self.sys_log_db = "system_data_log.db"
+        self.voltage_table = "voltages"
+        self.sql_engine = self.create_SQLite_engine()
+        self.create_voltage_table() # idempotent
+
+    def create_SQLite_engine(self):
+        return create_engine("sqlite:///%s" % self.sys_log_db, echo=False)
+
+    def create_voltage_table(self, force=False):
+        with self.sql_engine.connect() as sql_conn:
+            if force:
+                sql_text = text(f"""DROP TABLE IF EXISTS {self.voltage_table};
+                                 """)
+                sql_conn.execute(sql_text)
+            # define schema
+            sql_text = text(f"""CREATE TABLE IF NOT EXISTS {self.voltage_table} (
+                                    Timestamp TEXT,
+                                    Vmain FLOAT,
+                                    Vmain_raw FLOAT,
+                                    Vaux FLOAT,
+                                    Vaux_raw FLOAT,
+                                    PRIMARY KEY (Timestamp)
+                                );
+                             """)
+            sql_conn.execute(sql_text)
+            sql_conn.commit()
+
+    def log_voltages(self, Vmain, Vmain_raw, Vaux, Vaux_raw):
+        with self.sql_engine.connect() as sql_conn:
+            sql_text = text(f"""INSERT INTO {self.voltage_table}
+                                VALUES (DateTime("now", "localtime"),
+                                        :v_main,
+                                        :v_main_raw,
+                                        :v_aux,
+                                        :v_aux_raw
+                                );
+                             """)
+            sql_conn.execute(sql_text, {"v_main":     Vmain,
+                                        "v_main_raw": Vmain_raw,
+                                        "v_aux":      Vaux,
+                                        "v_aux_raw":  Vaux_raw})
+            sql_conn.commit()
+
+    def get_voltages(self, voltage_type=None, trailing_seconds=None):
+        if voltage_type is None:
+            cols = "*"
+        else:
+            cols = "Timestamp, %s" % voltage_type
+
+        if trailing_seconds is not None:
+            timestamp_now = dt.datetime.now()
+            timestamp_trail = timestamp_now - dt.timedelta(seconds=trailing_seconds)
+            timestamp_trail_str = timestamp_trail.strftime("%Y-%m-%d %H:%M:%S")
+            time_filter = "WHERE Timestamp >= '%s'" % timestamp_trail_str
+        else:
+            time_filter = ""
+
+        with self.sql_engine.connect() as sql_conn:
+            sql_text = text(f"""SELECT {cols}
+                                FROM {self.voltage_table}
+                                {time_filter};
+                            """)
+            result_df = pd.read_sql(sql_text, con=sql_conn, index_col="Timestamp", parse_dates=["Timestamp"])
+        return result_df
+
 
 
 class Controller(object):

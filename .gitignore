@@ -14,10 +14,10 @@ TEST*
 *.code-workspace
 
 # Project-specific
-logs/
+logs*/
 control_params.py
 network_names.py
-user
+*.db
 
 # Ignore any file/dir/symlink starting w/ these names:
 reference*
