@@ -9,6 +9,7 @@ from class_def import Vehicle, Controller, TimeKeeper, OutputHandler
 def main(Output, Timer):
     time.sleep(4)                # Give time for system to stabilize.
     Car = Vehicle(Output, Timer)
+    Timer.wait_for_ntp_update(log=True)
 
     key_acc_powered   = Car.is_acc_powered()
     engine_on_state   = Car.is_engine_running()

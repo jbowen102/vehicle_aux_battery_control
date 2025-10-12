@@ -281,7 +281,7 @@ class TimeKeeper(object):
         # Controller().light_red_led(0.5)
         # Controller().light_blue_led(0.5)
         start_time = self.get_time_now()
-        while not self._has_time_elapsed(start_time, NTP_WAIT_TIME):
+        while not self._has_time_elapsed(start_time, NTP_WAIT_TIME_SEC):
             if self.is_ntp_syncd(log=False):
                 self.sys_time_valid = True
                 self.Output.assert_time_valid()
