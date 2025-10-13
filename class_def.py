@@ -420,40 +420,40 @@ class DataLogger(object):
     def create_SQLite_engine(self):
         return create_engine("sqlite:///%s" % self.sys_log_db, echo=False)
 
-    def create_voltage_table(self, force=False):
+    def execute_sql(self, stmt_str, query=False):
         with self.sql_engine.connect() as sql_conn:
-            if force:
-                sql_text = text(f"""DROP TABLE IF EXISTS {self.voltage_table};
-                                 """)
-                sql_conn.execute(sql_text)
-            # define schema
-            sql_text = text(f"""CREATE TABLE IF NOT EXISTS {self.voltage_table} (
-                                    Timestamp TEXT,
-                                    Vmain FLOAT,
-                                    Vmain_raw FLOAT,
-                                    Vaux FLOAT,
-                                    Vaux_raw FLOAT,
-                                    PRIMARY KEY (Timestamp)
-                                );
-                             """)
-            sql_conn.execute(sql_text)
-            sql_conn.commit()
+            if query:
+                return pd.read_sql(text(stmt_str), con=sql_conn, index_col="Timestamp", parse_dates=["Timestamp"])
+            else:
+                sql_conn.execute(text(stmt_str))
+                sql_conn.commit()
+
+    def create_voltage_table(self, force=False):
+        if force:
+            sql_stmt = f"""DROP TABLE IF EXISTS {self.voltage_table};
+                        """
+            self.execute_sql(sql_stmt)
+        sql_stmt = f"""CREATE TABLE IF NOT EXISTS {self.voltage_table} (
+                           Timestamp TEXT,
+                           Vmain FLOAT,
+                           Vmain_raw FLOAT,
+                           Vaux FLOAT,
+                           Vaux_raw FLOAT,
+                           PRIMARY KEY (Timestamp)
+                       );
+                    """
+        self.execute_sql(sql_stmt)
 
     def log_voltages(self, Vmain, Vmain_raw, Vaux, Vaux_raw):
-        with self.sql_engine.connect() as sql_conn:
-            sql_text = text(f"""INSERT INTO {self.voltage_table}
-                                VALUES (DateTime("now", "localtime"),
-                                        :v_main,
-                                        :v_main_raw,
-                                        :v_aux,
-                                        :v_aux_raw
-                                );
-                             """)
-            sql_conn.execute(sql_text, {"v_main":     Vmain,
-                                        "v_main_raw": Vmain_raw,
-                                        "v_aux":      Vaux,
-                                        "v_aux_raw":  Vaux_raw})
-            sql_conn.commit()
+        sql_stmt = f"""INSERT INTO {self.voltage_table}
+                       VALUES (DateTime("now", "localtime"),
+                               {Vmain},
+                               {Vmain_raw},
+                               {Vaux},
+                               {Vaux_raw}
+                              );
+                    """
+        self.execute_sql(sql_stmt)
 
     def get_voltages(self, voltage_type=None, trailing_seconds=None):
         if voltage_type is None:
@@ -469,14 +469,11 @@ class DataLogger(object):
         else:
             time_filter = ""
 
-        with self.sql_engine.connect() as sql_conn:
-            sql_text = text(f"""SELECT {cols}
-                                FROM {self.voltage_table}
-                                {time_filter};
-                            """)
-            result_df = pd.read_sql(sql_text, con=sql_conn, index_col="Timestamp", parse_dates=["Timestamp"])
-        return result_df
-
+        sql_stmt = f"""SELECT {cols}
+                       FROM {self.voltage_table}
+                       {time_filter};
+                    """
+        return self.execute_sql(sql_stmt, query=True)
 
 
 class Controller(object):
