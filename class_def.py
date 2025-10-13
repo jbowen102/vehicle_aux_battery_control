@@ -414,10 +414,12 @@ class DataLogger(object):
     def __init__(self):
         self.sys_log_db = "system_data_log.db"
         self.voltage_table = "voltages"
+        self.charging_table = "charging"
         self.signals_table = "signals"
 
         self.sql_engine = self.create_SQLite_engine()
         self.create_voltage_table() # idempotent
+        self.create_charging_table() # idempotent
         self.create_signals_table() # idempotent
 
     def create_SQLite_engine(self):
@@ -443,6 +445,23 @@ class DataLogger(object):
                            Vaux FLOAT,
                            Vaux_raw FLOAT,
                            PRIMARY KEY (Timestamp)
+                       );
+                    """
+        self.execute_sql(sql_stmt)
+
+    def create_charging_table(self, force=False):
+        if force:
+            sql_stmt = f"""DROP TABLE IF EXISTS {self.charging_table};
+                        """
+            self.execute_sql(sql_stmt)
+        sql_stmt = f"""CREATE TABLE IF NOT EXISTS {self.charging_table} (
+                            Timestamp TEXT,
+                            charge_enable BOOL,
+                            charge_dir BOOL,
+                            charge_current BOOL,
+                            shunt_V_in FLOAT,
+                            shunt_V_out FLOAT,
+                            PRIMARY KEY (Timestamp)
                        );
                     """
         self.execute_sql(sql_stmt)
@@ -510,6 +529,12 @@ class DataLogger(object):
 
     def get_signals(self, timestamp, trailing_seconds=None):
         return self.get_data(self.signals_table, timestamp, trailing_seconds)
+
+    def log_charging(self, values_list):
+        self.log_data(self.charging_table, timestamp, values_list)
+
+    def get_charging(self, timestamp, trailing_seconds=None):
+        return self.get_data(self.charging_table, timestamp, trailing_seconds)
 
 
 class Controller(object):
