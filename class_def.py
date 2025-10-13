@@ -33,7 +33,7 @@ LOG_DIR = os.path.join(SCRIPT_DIR, "logs")
 DATE_FORMAT = "%Y%m%d"
 TIME_FORMAT = "%H%M%S"
 DATETIME_FORMAT = "%sT%s" % (DATE_FORMAT, TIME_FORMAT)
-
+DATETIME_FORMAT_SQL = "%Y-%m-%d %H:%M:%S"
 
 SHUNT_AMP_VOLTAGE_RATIO = 20/0.075
 
@@ -414,8 +414,11 @@ class DataLogger(object):
     def __init__(self):
         self.sys_log_db = "system_data_log.db"
         self.voltage_table = "voltages"
+        self.signals_table = "signals"
+
         self.sql_engine = self.create_SQLite_engine()
         self.create_voltage_table() # idempotent
+        self.create_signals_table() # idempotent
 
     def create_SQLite_engine(self):
         return create_engine("sqlite:///%s" % self.sys_log_db, echo=False)
@@ -444,36 +447,69 @@ class DataLogger(object):
                     """
         self.execute_sql(sql_stmt)
 
-    def log_voltages(self, Vmain, Vmain_raw, Vaux, Vaux_raw):
-        sql_stmt = f"""INSERT INTO {self.voltage_table}
-                       VALUES (DateTime("now", "localtime"),
-                               {Vmain},
-                               {Vmain_raw},
-                               {Vaux},
-                               {Vaux_raw}
+    def create_signals_table(self, force=False):
+        if force:
+            sql_stmt = f"""DROP TABLE IF EXISTS {self.signals_table};
+                        """
+            self.execute_sql(sql_stmt)
+        # define schema
+        sql_stmt = f"""CREATE TABLE IF NOT EXISTS {self.signals_table} (
+                            Timestamp TEXT,
+                            key_ACC BOOL,
+                            ecu_W BOOL,
+                            enable_sw BOOL,
+                            network_conn BOOL,
+                            HAT_analog_0 FLOAT,
+                            HAT_analog_1 FLOAT,
+                            HAT_analog_2 FLOAT,
+                            HAT_input_0 BOOL,
+                            HAT_input_1 BOOL,
+                            HAT_input_2 BOOL,
+                            HAT_relay_0 BOOL,
+                            HAT_relay_1 BOOL,
+                            HAT_relay_2 BOOL,
+                            PRIMARY KEY (Timestamp)
+                       );
+                    """
+        self.execute_sql(sql_stmt)
+
+    def log_data(self, table_name, timestamp, values_list):
+        values_str = ", ".join(values_list)
+        sql_stmt = f"""INSERT INTO {table_name}
+                       VALUES ({timestamp.strftime(DATETIME_FORMAT_SQL)},
+                               {values_str}
                               );
                     """
         self.execute_sql(sql_stmt)
 
-    def get_voltages(self, voltage_type=None, trailing_seconds=None):
-        if voltage_type is None:
-            cols = "*"
-        else:
-            cols = "Timestamp, %s" % voltage_type
+    def get_data(self, table_name, timestamp, trailing_seconds):
+        cols = "*"
 
         if trailing_seconds is not None:
-            timestamp_now = dt.datetime.now()
-            timestamp_trail = timestamp_now - dt.timedelta(seconds=trailing_seconds)
-            timestamp_trail_str = timestamp_trail.strftime("%Y-%m-%d %H:%M:%S")
+            # timestamp = dt.datetime.now()
+            timestamp_trail = timestamp - dt.timedelta(seconds=trailing_seconds)
+            timestamp_trail_str = timestamp_trail.strftime(DATETIME_FORMAT_SQL)
             time_filter = "WHERE Timestamp >= '%s'" % timestamp_trail_str
         else:
             time_filter = ""
 
         sql_stmt = f"""SELECT {cols}
-                       FROM {self.voltage_table}
+                       FROM {table_name}
                        {time_filter};
                     """
         return self.execute_sql(sql_stmt, query=True)
+
+    def log_voltages(self, timestamp, values_list):
+        self.log_data(self.voltage_table, timestamp, values_list)
+
+    def get_voltages(self, timestamp, voltage_type=None, trailing_seconds=None):
+        return self.get_data(self.voltage_table, timestamp, trailing_seconds)
+
+    def log_signals(self, timestamp, values_list):
+        self.log_data(self.signals_table, timestamp, values_list)
+
+    def get_signals(self, timestamp, trailing_seconds=None):
+        return self.get_data(self.signals_table, timestamp, trailing_seconds)
 
 
 class Controller(object):
