@@ -25,14 +25,16 @@ def main(Output, Timer):
 
     while True:
 
+        # Logging and output
+        Car.log_data()
         if (Timer.get_minutes() % 10 == 0) and (Timer.get_seconds() == 43):
             Car.check_wiring() # periodically look for I/O issues.
             time.sleep(1)
-
         if (Timer.get_minutes() % 5 == 0) and (Timer.get_seconds() == 0):
             # Every 5 minutes, print/log system status info.
             Car.output_status()
             time.sleep(1)
+
 
         # Check for enable-switch state change
         if not Car.is_enable_switch_closed() and sys_enabled_state:

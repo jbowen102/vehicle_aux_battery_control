@@ -417,15 +417,15 @@ class DataLogger(object):
         self.charging_table = "charging"
         self.signals_table = "signals"
 
-        self.sql_engine = self.create_SQLite_engine()
-        self.create_voltage_table() # idempotent
-        self.create_charging_table() # idempotent
-        self.create_signals_table() # idempotent
+        self.sql_engine = self._create_SQLite_engine()
+        self._create_voltage_table() # idempotent
+        self._create_charging_table() # idempotent
+        self._create_signals_table() # idempotent
 
-    def create_SQLite_engine(self):
+    def _create_SQLite_engine(self):
         return create_engine("sqlite:///%s" % self.sys_log_db, echo=False)
 
-    def execute_sql(self, stmt_str, query=False):
+    def _execute_sql(self, stmt_str, query=False):
         with self.sql_engine.connect() as sql_conn:
             if query:
                 return pd.read_sql(text(stmt_str), con=sql_conn, index_col="Timestamp", parse_dates=["Timestamp"])
@@ -433,11 +433,11 @@ class DataLogger(object):
                 sql_conn.execute(text(stmt_str))
                 sql_conn.commit()
 
-    def create_voltage_table(self, force=False):
+    def _create_voltage_table(self, force=False):
         if force:
             sql_stmt = f"""DROP TABLE IF EXISTS {self.voltage_table};
                         """
-            self.execute_sql(sql_stmt)
+            self._execute_sql(sql_stmt)
         sql_stmt = f"""CREATE TABLE IF NOT EXISTS {self.voltage_table} (
                            Timestamp TEXT,
                            Vmain FLOAT,
@@ -447,13 +447,13 @@ class DataLogger(object):
                            PRIMARY KEY (Timestamp)
                        );
                     """
-        self.execute_sql(sql_stmt)
+        self._execute_sql(sql_stmt)
 
-    def create_charging_table(self, force=False):
+    def _create_charging_table(self, force=False):
         if force:
             sql_stmt = f"""DROP TABLE IF EXISTS {self.charging_table};
                         """
-            self.execute_sql(sql_stmt)
+            self._execute_sql(sql_stmt)
         sql_stmt = f"""CREATE TABLE IF NOT EXISTS {self.charging_table} (
                             Timestamp TEXT,
                             charge_enable BOOL,
@@ -464,20 +464,21 @@ class DataLogger(object):
                             PRIMARY KEY (Timestamp)
                        );
                     """
-        self.execute_sql(sql_stmt)
+        self._execute_sql(sql_stmt)
 
-    def create_signals_table(self, force=False):
+    def _create_signals_table(self, force=False):
         if force:
             sql_stmt = f"""DROP TABLE IF EXISTS {self.signals_table};
                         """
-            self.execute_sql(sql_stmt)
+            self._execute_sql(sql_stmt)
         # define schema
         sql_stmt = f"""CREATE TABLE IF NOT EXISTS {self.signals_table} (
                             Timestamp TEXT,
+                            enable_sw BOOL,
                             key_ACC BOOL,
                             ecu_W BOOL,
-                            enable_sw BOOL,
-                            network_conn BOOL,
+                            engine_on BOOL,
+                            network_conn TEXT,
                             HAT_analog_0 FLOAT,
                             HAT_analog_1 FLOAT,
                             HAT_analog_2 FLOAT,
@@ -490,23 +491,23 @@ class DataLogger(object):
                             PRIMARY KEY (Timestamp)
                        );
                     """
-        self.execute_sql(sql_stmt)
+        self._execute_sql(sql_stmt)
 
-    def log_data(self, table_name, timestamp, values_list):
+    def _log_data(self, table_name, timestamp_now, values_list):
         values_str = ", ".join(values_list)
         sql_stmt = f"""INSERT INTO {table_name}
-                       VALUES ({timestamp.strftime(DATETIME_FORMAT_SQL)},
+                       VALUES ({timestamp_now.strftime(DATETIME_FORMAT_SQL)},
                                {values_str}
                               );
                     """
-        self.execute_sql(sql_stmt)
+        self._execute_sql(sql_stmt)
 
-    def get_data(self, table_name, timestamp, trailing_seconds):
+    def _get_data(self, table_name, timestamp_now, trailing_seconds):
         cols = "*"
 
         if trailing_seconds is not None:
-            # timestamp = dt.datetime.now()
-            timestamp_trail = timestamp - dt.timedelta(seconds=trailing_seconds)
+            # timestamp_now = dt.datetime.now()
+            timestamp_trail = timestamp_now - dt.timedelta(seconds=trailing_seconds)
             timestamp_trail_str = timestamp_trail.strftime(DATETIME_FORMAT_SQL)
             time_filter = "WHERE Timestamp >= '%s'" % timestamp_trail_str
         else:
@@ -516,25 +517,25 @@ class DataLogger(object):
                        FROM {table_name}
                        {time_filter};
                     """
-        return self.execute_sql(sql_stmt, query=True)
+        return self._execute_sql(sql_stmt, query=True)
 
-    def log_voltages(self, timestamp, values_list):
-        self.log_data(self.voltage_table, timestamp, values_list)
+    def log_voltages(self, timestamp_now, values_list):
+        self._log_data(self.voltage_table, timestamp_now, values_list)
 
-    def get_voltages(self, timestamp, voltage_type=None, trailing_seconds=None):
-        return self.get_data(self.voltage_table, timestamp, trailing_seconds)
+    def get_voltages(self, timestamp_now, trailing_seconds=None):
+        return self._get_data(self.voltage_table, timestamp_now, trailing_seconds)
 
-    def log_signals(self, timestamp, values_list):
-        self.log_data(self.signals_table, timestamp, values_list)
+    def log_signals(self, timestamp_now, values_list):
+        self._log_data(self.signals_table, timestamp_now, values_list)
 
-    def get_signals(self, timestamp, trailing_seconds=None):
-        return self.get_data(self.signals_table, timestamp, trailing_seconds)
+    def get_signals(self, timestamp_now, trailing_seconds=None):
+        return self._get_data(self.signals_table, timestamp_now, trailing_seconds)
 
-    def log_charging(self, values_list):
-        self.log_data(self.charging_table, timestamp, values_list)
+    def log_charging(self, timestamp_now, values_list):
+        self._log_data(self.charging_table, timestamp_now, values_list)
 
-    def get_charging(self, timestamp, trailing_seconds=None):
-        return self.get_data(self.charging_table, timestamp, trailing_seconds)
+    def get_charging(self, timestamp_now, trailing_seconds=None):
+        return self._get_data(self.charging_table, timestamp_now, trailing_seconds)
 
 
 class Controller(object):
@@ -660,6 +661,7 @@ class Vehicle(object):
     def __init__(self, Output, Timer):
         self.Output = Output
         self.Timer = Timer
+        self.DataLogger = DataLogger()
         self.BattCharger = BatteryCharger(self.Output, self.Timer)
 
         self.key_acc_detect_pin = KEY_ACC_INPUT_PIN
@@ -674,6 +676,37 @@ class Vehicle(object):
         time.sleep(1)                # Give time for automationhat inputs to stabilize.
         self.check_wiring()
         Controller().close_relay(self.keepalive_relay_num) # Keep on whenever device is on.
+
+    def log_data(self):
+        self.DataLogger.log_voltages(self.Timer.get_time_now(),
+                                     self.get_main_voltage(log=False),
+                                     self.get_main_voltage_raw(log=False),
+                                     self.get_aux_voltage(log=False),
+                                     self.get_aux_voltage_raw(log=False)
+                                    )
+        self.DataLogger.log_charging(self.Timer.get_time_now(),
+                                     self.BattCharger.is_charging(),
+                                     self.BattCharger.is_charge_direction_fwd(),
+                                     self.BattCharger.get_charge_current(),
+                                     Controller().read_voltage(CHARGER_INPUT_SHUNT_HIGH_PIN),
+                                     Controller().read_voltage(CHARGER_INPUT_SHUNT_LOW_PIN)
+                                    )
+        self.DataLogger.log_signals(self.Timer.get_time_now(),
+                                    self.is_enable_switch_closed(log=False),
+                                    self.is_acc_powered(),
+                                    Controller().is_input_high(self.engine_on_detect_pin),
+                                    self.is_engine_running(log=False),
+                                    self.Timer.get_network_name(log=False),
+                                    Controller().read_voltage(0),
+                                    Controller().read_voltage(1),
+                                    Controller().read_voltage(2),
+                                    Controller().is_input_high(0),
+                                    Controller().is_input_high(1),
+                                    Controller().is_input_high(2),
+                                    Controller().is_relay_on(0),
+                                    Controller().is_relay_on(1),
+                                    Controller().is_relay_on(2)
+                                   )
 
     def check_wiring(self):
         if self.get_main_voltage_raw() < 5:
