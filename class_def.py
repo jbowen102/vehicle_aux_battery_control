@@ -458,7 +458,7 @@ class DataLogger(object):
                             Timestamp TEXT,
                             charge_enable BOOL,
                             charge_dir BOOL,
-                            charge_current BOOL,
+                            charge_current FLOAT,
                             shunt_V_in FLOAT,
                             shunt_V_out FLOAT,
                             PRIMARY KEY (Timestamp)
@@ -494,9 +494,10 @@ class DataLogger(object):
         self._execute_sql(sql_stmt)
 
     def _log_data(self, table_name, timestamp_now, values_list):
-        values_str = ", ".join(values_list)
+        values_str = ", ".join([str(x) for x in values_list]).replace("None", "NULL").upper()
+        # Convert True and False to TRUE and FALSE for SQLite to properly interpret as BOOL.
         sql_stmt = f"""INSERT INTO {table_name}
-                       VALUES ({timestamp_now.strftime(DATETIME_FORMAT_SQL)},
+                       VALUES ("{timestamp_now.strftime(DATETIME_FORMAT_SQL)}",
                                {values_str}
                               );
                     """
