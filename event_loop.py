@@ -34,7 +34,8 @@ def main(Output, Timer):
             # Every 5 minutes, print/log system status info.
             Car.output_status()
             time.sleep(1)
-
+            # Also check datalogging not crashed, every 5 min.
+            Car.check_datalogging()
 
         # Check for enable-switch state change
         if not Car.is_enable_switch_closed() and sys_enabled_state:

@@ -62,6 +62,9 @@ class ChargeControlError(Exception):
 class SystemVoltageError(Exception):
     pass
 
+class DataLoggingError(Exception):
+    pass
+
 
 class OutputHandler(object):
     def __init__(self):
@@ -417,11 +420,12 @@ class TimeKeeper(object):
 class DataLogger(object):
     def __init__(self):
         self.sys_log_db = "system_data_log.db"
+        self.sql_engine = self._create_SQLite_engine()
+
         self.voltage_table = "voltages"
         self.charging_table = "charging"
         self.signals_table = "signals"
 
-        self.sql_engine = self._create_SQLite_engine()
         self._create_voltage_table() # idempotent
         self._create_charging_table() # idempotent
         self._create_signals_table() # idempotent
@@ -530,17 +534,17 @@ class DataLogger(object):
     def get_voltages(self, timestamp_now, trailing_seconds=None):
         return self._get_data(self.voltage_table, timestamp_now, trailing_seconds)
 
-    def log_signals(self, timestamp_now, values_list):
-        self._log_data(self.signals_table, timestamp_now, values_list)
-
-    def get_signals(self, timestamp_now, trailing_seconds=None):
-        return self._get_data(self.signals_table, timestamp_now, trailing_seconds)
-
     def log_charging(self, timestamp_now, values_list):
         self._log_data(self.charging_table, timestamp_now, values_list)
 
     def get_charging(self, timestamp_now, trailing_seconds=None):
         return self._get_data(self.charging_table, timestamp_now, trailing_seconds)
+
+    def log_signals(self, timestamp_now, values_list):
+        self._log_data(self.signals_table, timestamp_now, values_list)
+
+    def get_signals(self, timestamp_now, trailing_seconds=None):
+        return self._get_data(self.signals_table, timestamp_now, trailing_seconds)
 
 
 class Controller(object):
@@ -702,16 +706,20 @@ class Vehicle(object):
                                     Controller().is_input_high(self.engine_on_detect_pin),
                                     self.is_engine_running(log=False),
                                     self.Timer.get_network_name(log=False),
-                                    Controller().read_voltage(0),
-                                    Controller().read_voltage(1),
-                                    Controller().read_voltage(2),
-                                    Controller().is_input_high(0),
-                                    Controller().is_input_high(1),
-                                    Controller().is_input_high(2),
-                                    Controller().is_relay_on(0),
-                                    Controller().is_relay_on(1),
-                                    Controller().is_relay_on(2)
+                                    *[Controller().read_voltage(n) for n in [0, 1, 2]],
+                                    *[Controller().is_input_high(n) for n in [0, 1, 2]],
+                                    *[Controller().is_relay_on(n) for n in [0, 1, 2]]
                                    )
+
+    def check_datalogging(self):
+        time_now = self.Timer.get_time_now()
+        threshold_s = 5 # Amount of time (in seconds) expected to always contain at least two log entries
+        table_accessors = [self.DataLogger.get_voltages,
+                           self.DataLogger.get_charging,
+                           self.DataLogger.get_signals]
+        for get_table in table_accessors:
+            if len(get_table(time_now, trailing_seconds=threshold_s).index) == 0:
+                raise DataLoggingError("Datalogging has lapsed for %d seconds." % threshold_s)
 
     def check_wiring(self):
         if self.get_main_voltage_raw() < 5:
