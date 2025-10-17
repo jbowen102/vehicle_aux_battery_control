@@ -494,8 +494,9 @@ class DataLogger(object):
         self._execute_sql(sql_stmt)
 
     def _log_data(self, table_name, timestamp_now, values_list):
-        values_str = ", ".join([str(x) for x in values_list]).replace("None", "NULL").upper()
         # Convert True and False to TRUE and FALSE for SQLite to properly interpret as BOOL.
+        # Handle network-name string that needs extra quote wrap.
+        values_str = ", ".join([str(x).upper() if not isinstance(x, str) else "'%s'" % x for x in values_list]).replace("NONE", "NULL")
         sql_stmt = f"""INSERT INTO {table_name}
                        VALUES ("{timestamp_now.strftime(DATETIME_FORMAT_SQL)}",
                                {values_str}
