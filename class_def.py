@@ -1,4 +1,5 @@
 import os
+import platform
 import pwd
 import time
 import datetime as dt
@@ -11,9 +12,12 @@ import sqlite3
 import pandas as pd
 from sqlalchemy import create_engine, text
 
-import automationhat as ah
-from adafruit_pcf8523.pcf8523 import PCF8523
-import board
+HOSTNAME = platform.node()
+if HOSTNAME.lower().startswith("rpi"):
+    # RPi-specific things that aren't needed (or usually installed) when running from laptop
+    import automationhat as ah
+    from adafruit_pcf8523.pcf8523 import PCF8523
+    import board
 
 from network_names import stored_ssid_mapping_dict     # local file
 from control_params import ALTERNATOR_OUTPUT_V_MIN, \
@@ -508,7 +512,6 @@ class DataLogger(object):
         cols = "*"
 
         if trailing_seconds is not None:
-            # timestamp_now = dt.datetime.now()
             timestamp_trail = timestamp_now - dt.timedelta(seconds=trailing_seconds)
             timestamp_trail_str = timestamp_trail.strftime(DATETIME_FORMAT_SQL)
             time_filter = "WHERE Timestamp >= '%s'" % timestamp_trail_str
