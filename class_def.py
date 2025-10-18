@@ -508,18 +508,15 @@ class DataLogger(object):
                     """
         self._execute_sql(sql_stmt)
 
-    def _get_data(self, table_name, timestamp_now, column_list, trailing_seconds):
+    def _get_data(self, table_name, timestamp_now, trailing_seconds, column_list):
         if column_list is not None:
             cols =  ", ".join(["Timestamp"] + column_list)
         else:
             cols = "*"
 
-        if trailing_seconds is not None:
-            timestamp_trail = timestamp_now - dt.timedelta(seconds=trailing_seconds)
-            timestamp_trail_str = timestamp_trail.strftime(DATETIME_FORMAT_SQL)
-            time_filter = "WHERE Timestamp >= '%s'" % timestamp_trail_str
-        else:
-            time_filter = ""
+        timestamp_trail = timestamp_now - dt.timedelta(seconds=trailing_seconds)
+        timestamp_trail_str = timestamp_trail.strftime(DATETIME_FORMAT_SQL)
+        time_filter = "WHERE Timestamp >= '%s'" % timestamp_trail_str
 
         sql_stmt = f"""SELECT {cols}
                        FROM {table_name}
@@ -530,20 +527,20 @@ class DataLogger(object):
     def log_voltages(self, timestamp_now, values_list):
         self._log_data(self.voltage_table, timestamp_now, values_list)
 
-    def get_voltages(self, timestamp_now, column_list=None, trailing_seconds=None):
-        return self._get_data(self.voltage_table, timestamp_now, column_list, trailing_seconds)
+    def get_voltages(self, timestamp_now, trailing_seconds, column_list=None):
+        return self._get_data(self.voltage_table, timestamp_now, trailing_seconds, column_list)
 
     def log_charging(self, timestamp_now, values_list):
         self._log_data(self.charging_table, timestamp_now, values_list)
 
-    def get_charging(self, timestamp_now, column_list=None, trailing_seconds=None):
-        return self._get_data(self.charging_table, timestamp_now, column_list, trailing_seconds)
+    def get_charging(self, timestamp_now, trailing_seconds, column_list=None):
+        return self._get_data(self.charging_table, timestamp_now, trailing_seconds, column_list)
 
     def log_signals(self, timestamp_now, values_list):
         self._log_data(self.signals_table, timestamp_now, values_list)
 
-    def get_signals(self, timestamp_now, column_list=None, trailing_seconds=None):
-        return self._get_data(self.signals_table, timestamp_now, column_list, trailing_seconds)
+    def get_signals(self, timestamp_now, trailing_seconds, column_list=None):
+        return self._get_data(self.signals_table, timestamp_now, trailing_seconds, column_list)
 
 
 class Controller(object):
@@ -715,8 +712,8 @@ class Vehicle(object):
                            self.DataLogger.get_charging,
                            self.DataLogger.get_signals]
         for get_table in table_accessors:
-            if len(get_table(time_now, trailing_seconds=threshold_s).index) == 0:
-                raise DataLoggingError("Datalogging has lapsed for %d seconds." % threshold_s)
+            if get_table(time_now, threshold_s).empty:
+                raise DataLoggingError("Datalogging has lapsed for >%d seconds." % threshold_s)
 
     def check_wiring(self):
         if self.get_main_voltage_raw() < 5:
