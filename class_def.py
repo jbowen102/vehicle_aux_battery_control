@@ -506,7 +506,10 @@ class DataLogger(object):
         # Convert True and False to TRUE and FALSE for SQLite to properly interpret as BOOL.
         # Handle network-name string that needs extra quote wrap.
         values_str = ", ".join([str(x).upper() if not isinstance(x, str) else "'%s'" % x for x in values_list]).replace("NONE", "NULL")
-        sql_stmt = f"""INSERT INTO {table_name}
+        # Since only using one-second precision timestamps, and loop iterations take less
+        # time than that, first insertion w/ a given "seconds" value will be the only one to
+        # persist in table.
+        sql_stmt = f"""INSERT OR IGNORE INTO {table_name}
                        VALUES ("{timestamp_now.strftime(DATETIME_FORMAT_SQL)}",
                                {values_str}
                               );
@@ -692,25 +695,25 @@ class Vehicle(object):
 
     def log_data(self):
         self.DataLogger.log_voltages(self.Timer.get_time_now(),
-                                     self.get_main_voltage_raw(log=False),
-                                     self.get_aux_voltage_raw(log=False)
+                                     [self.get_main_voltage_raw(log=False),
+                                      self.get_aux_voltage_raw(log=False)]
                                     )
         self.DataLogger.log_charging(self.Timer.get_time_now(),
-                                     self.BattCharger.is_charging(),
-                                     self.BattCharger.is_charge_direction_fwd(),
-                                     self.BattCharger.get_charge_current(),
-                                     Controller().read_voltage(CHARGER_INPUT_SHUNT_HIGH_PIN),
-                                     Controller().read_voltage(CHARGER_INPUT_SHUNT_LOW_PIN)
+                                     [self.BattCharger.is_charging(),
+                                      self.BattCharger.is_charge_direction_fwd(),
+                                      self.BattCharger.get_charge_current(),
+                                      Controller().read_voltage(CHARGER_INPUT_SHUNT_HIGH_PIN),
+                                      Controller().read_voltage(CHARGER_INPUT_SHUNT_LOW_PIN)]
                                     )
         self.DataLogger.log_signals(self.Timer.get_time_now(),
-                                    self.is_enable_switch_closed(log=False),
-                                    self.is_acc_powered(),
-                                    Controller().is_input_high(self.engine_on_detect_pin),
-                                    self.is_engine_running(log=False),
-                                    self.Timer.get_network_name(log=False),
+                                    [self.is_enable_switch_closed(log=False),
+                                     self.is_acc_powered(),
+                                     Controller().is_input_high(self.engine_on_detect_pin),
+                                     self.is_engine_running(log=False),
+                                     self.Timer.get_network_name(log=False),
                                     *[Controller().read_voltage(n) for n in [0, 1, 2]],
                                     *[Controller().is_input_high(n) for n in [0, 1, 2]],
-                                    *[Controller().is_relay_on(n) for n in [0, 1, 2]]
+                                    *[Controller().is_relay_on(n) for n in [0, 1, 2]]]
                                    )
 
     def check_datalogging(self):
@@ -1101,8 +1104,8 @@ class BatteryCharger(object):
             raise ChargeControlError("BatteryCharger.disable_charge() failed to open charge-direction relay.")
 
     def get_charge_current(self):
-        if not self.is_charging():
-            raise ChargeControlError("BatteryCharger.get_charge_current() called when not charging.")
+        # if not self.is_charging():
+        #     raise ChargeControlError("BatteryCharger.get_charge_current() called when not charging.")
         voltage_diff = (  Controller().read_voltage(CHARGER_INPUT_SHUNT_HIGH_PIN)
                         - Controller().read_voltage(CHARGER_INPUT_SHUNT_LOW_PIN) )
         return voltage_diff * SHUNT_AMP_VOLTAGE_RATIO
