@@ -245,9 +245,12 @@ class TimeKeeper(object):
         If source is set to "rtc" or "sys", will use that data source
         regardless of status.
         """
-        if self.rtc_time_valid or source == "rtc":
+        if source == "sys":
+            datetime_now = dt.datetime.now()
+        elif source == "rtc" or self.rtc_time_valid:
             datetime_now = dt.datetime.fromtimestamp(time.mktime(self.rtc.datetime))
         else:
+            # Fall back to sys time if rtc time invalid.
             datetime_now = dt.datetime.now()
 
         if string_format is not None:
