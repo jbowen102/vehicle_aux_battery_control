@@ -277,13 +277,12 @@ class TimeKeeper(object):
                                 capture_output=True, text=True)
         updated = (result.stdout.strip() == "yes")
         if log and updated:
-            self.Output.print_info("System date/time updated%s."
+            self.Output.print_rtc_and_sys_time("System date/time updated%s."
                                    % (" (connected to %s)"
                                       % (self.get_network_name(log=False)) if self.get_network_name(log=log) else ""))
         elif log:
-            self.Output.print_info("System date/time updated%s."
-                                   % (" (connected to %s)"
-                                      % (self.get_network_name(log=False)) if self.get_network_name(log=log) else ""))
+            self.Output.print_warn("System date/time not yet updated since last power loss.")
+
         return updated
 
     def wait_for_ntp_update(self, log=False):
@@ -291,9 +290,6 @@ class TimeKeeper(object):
         if log:
             self.Output.print_debug("Checking if sys date/time synchronized to NTP server...")
 
-        # Controller().turn_off_all_ind_leds()
-        # Controller().light_red_led(0.5)
-        # Controller().light_blue_led(0.5)
         start_time = self.get_time_now()
         while not self._has_time_elapsed(start_time, NTP_WAIT_TIME_SEC):
             if self.is_ntp_syncd(log=False):
@@ -301,10 +297,6 @@ class TimeKeeper(object):
                 self.Output.assert_time_valid()
                 self.is_ntp_syncd(log=True) # Call again just for output
                 break
-        # Controller().turn_off_all_ind_leds()
-
-        if log and not self.sys_time_valid:
-            self.Output.print_warn("System date/time not yet updated since last power loss.")
 
     def set_charge_start_time(self):
         self.charge_start_time = self.get_time_now()
@@ -1104,8 +1096,6 @@ class BatteryCharger(object):
             raise ChargeControlError("BatteryCharger.disable_charge() failed to open charge-direction relay.")
 
     def get_charge_current(self):
-        # if not self.is_charging():
-        #     raise ChargeControlError("BatteryCharger.get_charge_current() called when not charging.")
         voltage_diff = (  Controller().read_voltage(CHARGER_INPUT_SHUNT_HIGH_PIN)
                         - Controller().read_voltage(CHARGER_INPUT_SHUNT_LOW_PIN) )
         return voltage_diff * SHUNT_AMP_VOLTAGE_RATIO
