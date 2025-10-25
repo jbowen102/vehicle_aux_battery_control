@@ -33,6 +33,7 @@ from control_params import ALTERNATOR_OUTPUT_V_MIN, \
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_DIR = os.path.join(SCRIPT_DIR, "logs")
+DATA_LOG_PATH = os.path.join(SCRIPT_DIR, "system_data_log.db")
 
 DATE_FORMAT = "%Y%m%d"
 TIME_FORMAT = "%H%M%S"
@@ -277,7 +278,7 @@ class TimeKeeper(object):
                                 capture_output=True, text=True)
         updated = (result.stdout.strip() == "yes")
         if log and updated:
-            self.Output.print_rtc_and_sys_time("System date/time updated%s."
+            self.Output.print_rtc_and_sys_time("System date/time updated%s"
                                    % (" (connected to %s)"
                                       % (self.get_network_name(log=False)) if self.get_network_name(log=log) else ""))
         elif log:
@@ -414,7 +415,6 @@ class TimeKeeper(object):
 
 class DataLogger(object):
     def __init__(self):
-        self.sys_log_db = "system_data_log.db"
         self.sql_engine = self._create_SQLite_engine()
 
         self.voltage_table = "voltages"
@@ -426,7 +426,7 @@ class DataLogger(object):
         self._create_signals_table() # idempotent
 
     def _create_SQLite_engine(self):
-        return create_engine("sqlite:///%s" % self.sys_log_db, echo=False)
+        return create_engine("sqlite:///%s" % DATA_LOG_PATH, echo=False)
 
     def _execute_sql(self, stmt_str, query=False):
         with self.sql_engine.connect() as sql_conn:
@@ -533,8 +533,11 @@ class DataLogger(object):
     def log_charging(self, timestamp_now, values_list):
         self._log_data(self.charging_table, timestamp_now, values_list)
 
-    def get_charging(self, timestamp_now, trailing_seconds, column_list=None):
-        return self._get_data(self.charging_table, timestamp_now, trailing_seconds, column_list)
+    def get_charging(self, timestamp_now, trailing_seconds, column_list=None, signed_charge_dir=False):
+        charge_data = self._get_data(self.charging_table, timestamp_now, trailing_seconds, column_list)
+        if signed_charge_dir:
+            charge_data["charge_current"] = charge_data["charge_current"] * (charge_data["charge_dir"] - 1/2)*2
+        return charge_data
 
     def log_signals(self, timestamp_now, values_list):
         self._log_data(self.signals_table, timestamp_now, values_list)
