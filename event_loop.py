@@ -4,7 +4,7 @@ import time
 import signal
 import traceback
 
-from class_def import Vehicle, Controller, TimeKeeper, OutputHandler
+from class_def import Vehicle, Controller, TimeKeeper, OutputHandler, SysTimeUpdateException
 
 def main(Output, Timer):
     time.sleep(4)                # Give time for system to stabilize.
@@ -36,6 +36,8 @@ def main(Output, Timer):
             time.sleep(1)
             # Also check datalogging not crashed, every 5 min.
             Car.check_datalogging()
+            # Restart program if NTP syncs for first time here
+            Timer.is_ntp_syncd(restart_on_sync=True, log=False)
 
         # Check for enable-switch state change
         if not Car.is_enable_switch_closed() and sys_enabled_state:
@@ -181,6 +183,10 @@ if __name__ == "__main__":
         else:
             Output.print_exit(traceback.format_exc())
             Controller().open_all_relays()
+    except SysTimeUpdateException:
+        Output.print_exit("Restarting program after sys time updated.")
+        Controller().open_all_relays()
+        sys.exit(109)
     except KeyboardInterrupt:
         Output.print_exit("Keyboard interrupt.")
         Controller().open_all_relays()

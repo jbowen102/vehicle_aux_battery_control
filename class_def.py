@@ -66,6 +66,9 @@ class SystemVoltageError(Exception):
 class DataLoggingError(Exception):
     pass
 
+class SysTimeUpdateException(Exception):
+    pass
+
 
 class OutputHandler(object):
     def __init__(self):
@@ -145,7 +148,8 @@ class OutputHandler(object):
     def print_rtc_and_sys_time(self, preface):
         self.print_debug("%s:" % preface)
         self.print_debug("\tRTC time: %s" % self.Clock.get_time_now(string_format=DATETIME_FORMAT, source="rtc"))
-        self.print_debug("\tSys time: %s" % self.Clock.get_time_now(string_format=DATETIME_FORMAT, source="sys"))
+        self.print_debug("\tSys time: %s (%sNTP sync)" % (self.Clock.get_time_now(string_format=DATETIME_FORMAT, source="sys"),
+                                                          "No " if not self.Clock.is_ntp_syncd(log=False) else ""))
 
     def print_network_status(self):
         """Outputs name defined in name-mapping dict (not SSID).
@@ -272,15 +276,25 @@ class TimeKeeper(object):
             self.Output.print_temp("Network SSID returned by iwgetid: %s" % network_ssid)
         return stored_ssid_mapping_dict.get(network_ssid)
 
-    def is_ntp_syncd(self, log=False):
+    def is_ntp_syncd(self, restart_on_sync=False, log=False):
+        """If restart_on_sync is True, will throw exception to restart program to reset
+        issues AutomationHAT gets into when sys time suddenly jumps forward.
+        """
         # ntplib.NTPClient().request("pool.ntp.org", timeout=NTP_WAIT_TIME_SEC)
         result = subprocess.run(["/usr/bin/timedatectl", "show", "--property=NTPSynchronized", "--value"],
                                 capture_output=True, text=True)
         updated = (result.stdout.strip() == "yes")
-        if log and updated:
-            self.Output.print_rtc_and_sys_time("System date/time updated%s"
-                                   % (" (connected to %s)"
-                                      % (self.get_network_name(log=False)) if self.get_network_name(log=log) else ""))
+
+        if updated and restart_on_sync and not self.sys_time_valid:
+            # First time seeing NTP sync
+            raise SysTimeUpdateException("NTP sync acquired. Restarting program.")
+            # Don't need to set sys_time_valid because program stopping.
+        elif updated:
+            self.sys_time_valid = True
+            if log:
+                self.Output.print_rtc_and_sys_time("System date/time updated%s"
+                                    % (" (connected to %s)"
+                                        % (self.get_network_name(log=False)) if self.get_network_name(log=log) else ""))
         elif log:
             self.Output.print_warn("System date/time not yet updated since last power loss.")
 
