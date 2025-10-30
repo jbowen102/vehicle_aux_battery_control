@@ -310,8 +310,8 @@ class TimeKeeper(object):
             if self.is_ntp_syncd(log=False):
                 self.sys_time_valid = True
                 self.Output.assert_time_valid()
-                self.is_ntp_syncd(log=True) # Call again just for output
                 break
+        self.is_ntp_syncd(log=True) # Call again just for output
 
     def set_charge_start_time(self):
         self.charge_start_time = self.get_time_now()

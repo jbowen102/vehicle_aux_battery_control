@@ -32,12 +32,12 @@ def main(Output, Timer):
             time.sleep(1)
         if (Timer.get_minutes() % 5 == 0) and (Timer.get_seconds() == 0):
             # Every 5 minutes, print/log system status info.
+            Timer.is_ntp_syncd(restart_on_sync=True, log=False)
+            # Will restart program if NTP sync detected first here (need to call before Vehicle.output_status()).
             Car.output_status()
             time.sleep(1)
             # Also check datalogging not crashed, every 5 min.
             Car.check_datalogging()
-            # Restart program if NTP syncs for first time here
-            Timer.is_ntp_syncd(restart_on_sync=True, log=False)
 
         # Check for enable-switch state change
         if not Car.is_enable_switch_closed() and sys_enabled_state:
