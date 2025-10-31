@@ -287,7 +287,7 @@ class TimeKeeper(object):
 
         if updated and restart_on_sync and not self.sys_time_valid:
             # First time seeing NTP sync
-            raise SysTimeUpdateException("NTP sync acquired. Restarting program.")
+            Controller().exit_program(SysTimeUpdateException, "NTP sync acquired. Restarting program.")
             # Don't need to set sys_time_valid because program stopping.
         elif updated:
             self.sys_time_valid = True
@@ -637,6 +637,9 @@ class Controller(object):
         for relay_num in self.relay_list:
             self.open_relay(relay_num)
 
+    def exit_program(self, ProgFault, err_message):
+        raise ProgFault(err_message)
+
     def reboot(self, delay_s):
         try:
             self.turn_off_all_ind_leds()
@@ -730,19 +733,19 @@ class Vehicle(object):
                            self.DataLogger.get_signals]
         for get_table in table_accessors:
             if get_table(time_now, threshold_s).empty:
-                raise DataLoggingError("Datalogging has lapsed for >%d seconds." % threshold_s)
+                Controller().exit_program(DataLoggingError, "Datalogging has lapsed for >%d seconds." % threshold_s)
 
     def check_wiring(self):
         if self.get_main_voltage_raw() < 5:
             # No FLA voltage detected
             output_str = "No main voltage detected (reading %.2fV)." % self.get_main_voltage_raw(log=False)
             self.Output.print_err(output_str)
-            raise SystemVoltageError(output_str)
+            Controller().exit_program(SystemVoltageError, output_str)
         if self.get_aux_voltage_raw() < 5:
             # No Li voltage detected
             output_str = "No aux voltage detected (reading %.2fV)." % self.get_aux_voltage_raw(log=False)
             self.Output.print_err(output_str)
-            raise SystemVoltageError(output_str)
+            Controller().exit_program(SystemVoltageError, output_str)
 
         # TODO - FIX
         # if self.BattCharger.is_charging() and self.BattCharger.get_charge_current() < MIN_CHARGE_CURRENT_A:
@@ -752,7 +755,7 @@ class Vehicle(object):
         if self.is_key_off() and self.is_engine_running():
             output_str = "Inferred engine running but key OFF."
             self.Output.print_err(output_str)
-            raise SystemVoltageError(output_str)
+            Controller().exit_program(SystemVoltageError, output_str)
 
     def is_acc_powered(self):
         # Returns True when key in either ACC or ON position
@@ -894,7 +897,7 @@ class Vehicle(object):
         if elevated and depressed:
             output_str = "Vehicle.get_aux_voltage() indicating voltage both elevated and depressed (mutually exclusive)."
             self.Output.print_err(output_str)
-            raise SystemVoltageError(output_str)
+            Controller().exit_program(SystemVoltageError, output_str)
 
         voltage_est = self.get_aux_voltage_raw(log=log)
         if log:
@@ -982,13 +985,13 @@ class Vehicle(object):
                          "but aux batt V (%.2fV) is below min threshold %.2fV." \
                          % (self.get_aux_voltage(log=False), AUX_V_MIN)
             self.Output.print_err(output_str)
-            raise ChargeControlError(output_str)
+            Controller().exit_program(ChargeControlError, output_str)
         if self.get_main_voltage(log=False) > MAIN_V_MAX:
             output_str = "Called Vehicle.charge_starter_batt(), " \
                          "but starter batt V (%.2fV) is over max threshold %.2fV." \
                          % (self.get_main_voltage(log=False), MAIN_V_MAX)
             self.Output.print_err(output_str)
-            raise SystemVoltageError(output_str)
+            Controller().exit_program(SystemVoltageError, output_str)
 
         self.BattCharger.set_charge_direction_fwd()
         self.BattCharger.enable_charge()
@@ -1007,7 +1010,7 @@ class Vehicle(object):
             main_voltage = self.get_main_voltage(log=True)
             output_str = "Called Vehicle.charge_aux_batt(), but engine not running."
             self.Output.print_err(output_str)
-            raise ChargeControlError(output_str)
+            Controller().exit_program(ChargeControlError, output_str)
         if self.is_aux_batt_full(log=False):
             output_str = "Called Vehicle.charge_aux_batt(), " \
                          "and aux batt already full (%.2fV > %.2fV max." \
@@ -1090,7 +1093,7 @@ class BatteryCharger(object):
             self.Timer.set_charge_start_time()
         if not self.is_charging():
             self.Output.print_err("BatteryCharger.enable_charge() failed to start charging.")
-            raise ChargeControlError("BatteryCharger.enable_charge() failed to start charging.")
+            Controller().exit_program(ChargeControlError, "BatteryCharger.enable_charge() failed to start charging.")
 
     def disable_charge(self):
         if self.is_charging():
@@ -1104,10 +1107,10 @@ class BatteryCharger(object):
 
         if self.is_charging():
             self.Output.print_err("BatteryCharger.disable_charge() failed to stop charging.")
-            raise ChargeControlError("BatteryCharger.disable_charge() failed to stop charging.")
+            Controller().exit_program(ChargeControlError, "BatteryCharger.disable_charge() failed to stop charging.")
         if not Controller().is_relay_off(self.charge_direction_relay):
             self.Output.print_err("BatteryCharger.disable_charge() failed to open charge-direction relay.")
-            raise ChargeControlError("BatteryCharger.disable_charge() failed to open charge-direction relay.")
+            Controller().exit_program(ChargeControlError, "BatteryCharger.disable_charge() failed to open charge-direction relay.")
 
     def get_charge_current(self):
         voltage_diff = (  Controller().read_voltage(CHARGER_INPUT_SHUNT_HIGH_PIN)
@@ -1128,7 +1131,7 @@ class BatteryCharger(object):
             time.sleep(0.5)
         if not self.is_charge_direction_fwd():
             self.Output.print_err("BatteryCharger.set_charge_direction_fwd() failed to set direction.")
-            raise ChargeControlError("BatteryCharger.set_charge_direction_fwd() failed to set direction.")
+            Controller().exit_program(ChargeControlError, "BatteryCharger.set_charge_direction_fwd() failed to set direction.")
 
     def set_charge_direction_rev(self):
         # Charge aux battery with alternator
@@ -1138,5 +1141,5 @@ class BatteryCharger(object):
             time.sleep(0.5)
         if not self.is_charge_direction_rev():
             self.Output.print_err("BatteryCharger.set_charge_direction_rev() failed to set direction.")
-            raise ChargeControlError("BatteryCharger.set_charge_direction_rev() failed to set direction.")
+            Controller().exit_program(ChargeControlError, "BatteryCharger.set_charge_direction_rev() failed to set direction.")
 
