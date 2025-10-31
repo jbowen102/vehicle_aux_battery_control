@@ -634,10 +634,18 @@ class Controller(object):
     def open_all_relays(self):
         # Make sure charge-enable relay opened first (e.g., before charge-direction one)
         self.open_relay(CHARGER_ENABLE_RELAY)
+        time.sleep(0.2)
         for relay_num in self.relay_list:
             self.open_relay(relay_num)
 
     def exit_program(self, ProgFault, err_message):
+        self.light_blue_led()
+        self.light_red_led()
+        time.sleep(3)
+        self.turn_off_all_ind_leds()
+        time.sleep(1)
+        self.open_all_relays()
+        time.sleep(1)
         raise ProgFault(err_message)
 
     def reboot(self, delay_s):
