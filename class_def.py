@@ -10,6 +10,7 @@ from colorama import Style, Fore, Back
 
 import sqlite3
 import pandas as pd
+import numpy as np
 from sqlalchemy import create_engine, text
 
 HOSTNAME = platform.node()
@@ -833,7 +834,7 @@ class Vehicle(object):
         elevated = False
 
         voltage_trailing_msmts = self.DataLogger.get_voltages(self.Timer.get_time_now(), DB_SAMPLE_TRAILING_SEC, ["Vmain_raw"])
-        voltage_est = voltage_trailing_msmts["Vmain_raw"].mean()
+        voltage_est = np.median(voltage_trailing_msmts["Vmain_raw"].to_list() + [self.get_main_voltage_raw(log=False)])
 
         if self.is_engine_running(v_main=voltage_est):
             # Currently being charged, elevating voltage
@@ -905,7 +906,7 @@ class Vehicle(object):
         depressed = False
 
         voltage_trailing_msmts = self.DataLogger.get_voltages(self.Timer.get_time_now(), DB_SAMPLE_TRAILING_SEC, ["Vaux_raw"])
-        voltage_est = voltage_trailing_msmts["Vaux_raw"].mean()
+        voltage_est = np.median(voltage_trailing_msmts["Vaux_raw"].to_list() + [self.get_aux_voltage_raw(log=False)])
 
         if self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_fwd():
             # Currently charging starter battery, depressing aux-batt voltage.
