@@ -28,7 +28,8 @@ from control_params import ALTERNATOR_OUTPUT_V_MIN, \
                            RPI_SHUTDOWN_DELAY_SEC, \
                            STATE_CHANGE_DELAY_SEC, \
                            VOLTAGE_STABILIZATION_TIME_SEC, \
-                           NTP_WAIT_TIME_SEC, RTC_LAG_THRESHOLD_SEC
+                           NTP_WAIT_TIME_SEC, RTC_LAG_THRESHOLD_SEC, \
+                           DB_SAMPLE_TRAILING_SEC
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -706,9 +707,10 @@ class Vehicle(object):
         self.led_level = 0
 
         Controller().open_all_relays()
-        time.sleep(1)                # Give time for automationhat inputs to stabilize.
+        time.sleep(1)                # Give time for AutomationHAT inputs to stabilize.
         self.check_wiring()
         Controller().close_relay(self.keepalive_relay_num) # Keep on whenever device is on.
+        self.log_data()
 
     def log_data(self):
         self.DataLogger.log_voltages(self.Timer.get_time_now(),
@@ -772,14 +774,21 @@ class Vehicle(object):
     def is_key_off(self):
         return not self.is_acc_powered()
 
-    def is_engine_running(self, log=False):
+    def is_engine_running(self, v_main=None, log=False):
+        """v_main arg allows caller to pass already-measured voltage to avoid
+        evaluating complex conditional with different values.
+        """
         if not self.is_acc_powered():
             return False
         else:
-            # W signal not consistent enough.
-            ecu_w_signal_high = Controller().is_input_high(self.engine_on_detect_pin)
-            main_voltage_elevated = (self.get_main_voltage_raw(log=log) >= ALTERNATOR_OUTPUT_V_MIN)
+            # W signal will be low if CEL on.
+            if v_main is None:
+                v_main = self.get_main_voltage(log=log)
+            main_voltage_elevated = (v_main >= ALTERNATOR_OUTPUT_V_MIN)
+            # Prevent false positive due to DC charger elevating main voltage.
             dc_charger_elevating = (self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_fwd())
+
+            ecu_w_signal_high = Controller().is_input_high(self.engine_on_detect_pin)
             if log:
                 self.Output.print_debug("ECU W signal %s" % ("HIGH" if ecu_w_signal_high else "LOW"))
             return (ecu_w_signal_high or (main_voltage_elevated and not dc_charger_elevating))
@@ -822,7 +831,11 @@ class Vehicle(object):
 
     def get_main_voltage(self, log=False):
         elevated = False
-        if self.is_engine_running():
+
+        voltage_trailing_msmts = self.DataLogger.get_voltages(self.Timer.get_time_now(), DB_SAMPLE_TRAILING_SEC, ["Vmain_raw"])
+        voltage_est = voltage_trailing_msmts["Vmain_raw"].mean()
+
+        if self.is_engine_running(v_main=voltage_est):
             # Currently being charged, elevating voltage
             elevated = True
             if log:
@@ -841,10 +854,10 @@ class Vehicle(object):
                 self.Output.print_warn("Charging aux battery during FLA battery-voltage "
                                        "reading (engine should have just stopped).")
 
-        voltage_est = self.get_main_voltage_raw(log=log)
         if log:
-            self.Output.print_debug("FLA battery-voltage reading: %.2fV%s."
-                                    % (voltage_est, (" (assumed elevated)" if elevated else "")))
+            self.Output.print_debug("FLA battery-voltage reading (%ds trail): %.2fV%s."
+                                    % (DB_SAMPLE_TRAILING_SEC, voltage_est,
+                                       (" (assumed elevated)" if elevated else "")))
         return voltage_est
 
         # # INACTIVE (needs further dev):
@@ -890,6 +903,10 @@ class Vehicle(object):
     def get_aux_voltage(self, log=False):
         elevated = False
         depressed = False
+
+        voltage_trailing_msmts = self.DataLogger.get_voltages(self.Timer.get_time_now(), DB_SAMPLE_TRAILING_SEC, ["Vaux_raw"])
+        voltage_est = voltage_trailing_msmts["Vaux_raw"].mean()
+
         if self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_fwd():
             # Currently charging starter battery, depressing aux-batt voltage.
             depressed = True
@@ -907,11 +924,12 @@ class Vehicle(object):
             self.Output.print_err(output_str)
             Controller().exit_program(SystemVoltageError, output_str)
 
-        voltage_est = self.get_aux_voltage_raw(log=log)
         if log:
-            self.Output.print_debug("Li battery-voltage reading: %.2fV%s."
-                                    % (voltage_est, (" (assumed elevated)" if elevated
-                                               else (" (assumed depressed)" if depressed else ""))))
+            self.Output.print_debug("Li battery-voltage reading (%ds trail): %.2fV%s."
+                                        % (DB_SAMPLE_TRAILING_SEC, voltage_est,
+                                           (" (assumed elevated)" if elevated
+                                                                  else (" (assumed depressed)" if depressed
+                                                                        else ""))))
         return voltage_est
 
         # # INACTIVE (needs further dev):
@@ -1069,8 +1087,8 @@ class Vehicle(object):
         self.Output.print_info("\tKey %s." % ("@ ACC/ON" if key_acc_powered else "OFF"))
         self.Output.print_info("\tEngine %s (W signal %s)."
                                % (("ON" if engine_on_state else "OFF"), ("HIGH" if ecu_w_signal_high else "LOW")))
-        self.Output.print_info("\tMain (raw): %.2f" % self.get_main_voltage_raw())
-        self.Output.print_info("\tAux  (raw): %.2f" % self.get_aux_voltage_raw())
+        self.Output.print_info("\tMain (filtered/raw): %.2f/%.2f" % (self.get_main_voltage(), self.get_main_voltage_raw()))
+        self.Output.print_info("\tAux  (filtered/raw): %.2f/%.2f" % (self.get_aux_voltage(), self.get_aux_voltage_raw()))
         # self.Output.print_info("\t%s" % (      ("Charging -> FLA (%.2fA)." % charge_current) if charging_fla
         #                                  else (("Charging -> Li (%.2fA)." % charge_current) if charging_li
         self.Output.print_info("\t%s" % (      ("Charging -> FLA.") if charging_fla

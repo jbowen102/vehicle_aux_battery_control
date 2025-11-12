@@ -9,6 +9,11 @@ from class_def import Vehicle, Controller, TimeKeeper, OutputHandler, SysTimeUpd
 def main(Output, Timer):
     time.sleep(4)                # Give time for system to stabilize.
     Car = Vehicle(Output, Timer)
+
+    # Log initial data to use for proper state inference, voltage measurements, etc.
+    for x in range(5):
+        Car.log_data()
+        time.sleep(1.1)
     Timer.wait_for_ntp_update(log=True)
 
     key_acc_powered   = Car.is_acc_powered()
