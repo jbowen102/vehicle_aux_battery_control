@@ -505,6 +505,7 @@ class DataLogger(object):
                             HAT_relay_0 BOOL,
                             HAT_relay_1 BOOL,
                             HAT_relay_2 BOOL,
+                            PID INTEGER,
                             PRIMARY KEY (Timestamp)
                        );
                     """
@@ -731,9 +732,10 @@ class Vehicle(object):
                                      Controller().is_input_high(self.engine_on_detect_pin),
                                      self.is_engine_running(log=False),
                                      self.Timer.get_network_name(log=False),
-                                    *[Controller().read_voltage(n) for n in [0, 1, 2]],
-                                    *[Controller().is_input_high(n) for n in [0, 1, 2]],
-                                    *[Controller().is_relay_on(n) for n in [0, 1, 2]]]
+                                     *[Controller().read_voltage(n) for n in [0, 1, 2]],
+                                     *[Controller().is_input_high(n) for n in [0, 1, 2]],
+                                     *[Controller().is_relay_on(n) for n in [0, 1, 2]],
+                                     os.getpid()]
                                    )
 
     def check_datalogging(self):
