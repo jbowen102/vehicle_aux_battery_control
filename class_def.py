@@ -722,7 +722,7 @@ class Vehicle(object):
         self.DataLogger.log_charging(self.Timer.get_time_now(),
                                      [self.BattCharger.is_charging(),
                                       self.BattCharger.is_charge_direction_fwd(),
-                                      self.BattCharger.get_charge_current(),
+                                      self.get_charge_current_raw(),
                                       Controller().read_voltage(CHARGER_INPUT_SHUNT_HIGH_PIN),
                                       Controller().read_voltage(CHARGER_INPUT_SHUNT_LOW_PIN)]
                                     )
@@ -761,8 +761,8 @@ class Vehicle(object):
             Controller().exit_program(SystemVoltageError, output_str)
 
         # TODO - FIX
-        # if self.BattCharger.is_charging() and self.BattCharger.get_charge_current() < MIN_CHARGE_CURRENT_A:
-        #     output_str = "No charge current detected despite charging (reading %.2fA)." % self.BattCharger.get_charge_current()
+        # if self.BattCharger.is_charging() and self.get_charge_current() < MIN_CHARGE_CURRENT_A:
+        #     output_str = "No charge current detected despite charging (reading %.2fA)." % self.get_charge_current()
         #     self.Output.print_err(output_str)
         #     raise ChargeControlError(output_str)
         if self.is_key_off() and self.is_engine_running():
@@ -959,6 +959,16 @@ class Vehicle(object):
         #     self.Output.print_debug("Aux open-circuit voltage est: %.2fV (includes %.1fV offset)" % (voltage_est, offset))
         # return voltage_est
 
+    def get_charge_current_raw(self):
+        voltage_diff = (  Controller().read_voltage(CHARGER_INPUT_SHUNT_HIGH_PIN)
+                        - Controller().read_voltage(CHARGER_INPUT_SHUNT_LOW_PIN) )
+        return voltage_diff * SHUNT_AMP_VOLTAGE_RATIO
+
+    def get_charge_current(self):
+        current_trailing_msmts = self.DataLogger.get_charging(self.Timer.get_time_now(), DB_SAMPLE_TRAILING_SEC, ["charge_current"])
+        current_est = np.median(current_trailing_msmts["charge_current"].to_list() + [self.get_charge_current_raw()])
+        return current_est
+
     def is_starter_batt_low(self, log=True):
         if not self.Timer.is_sys_voltage_stable():
             return False
@@ -1084,7 +1094,7 @@ class Vehicle(object):
         engine_on_state = self.is_engine_running()
         charging_fla = (self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_fwd())
         charging_li = (self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_rev())
-        # charge_current = self.BattCharger.get_charge_current() if self.BattCharger.is_charging() else None
+        # charge_current = self.get_charge_current() if self.BattCharger.is_charging() else None
         ecu_w_signal_high = Controller().is_input_high(self.engine_on_detect_pin)
 
         self.Output.print_info("\tKey %s." % ("@ ACC/ON" if key_acc_powered else "OFF"))
@@ -1097,10 +1107,9 @@ class Vehicle(object):
         self.Output.print_info("\t%s" % (      ("Charging -> FLA.") if charging_fla
                                          else (("Charging -> Li.") if charging_li
                                          else  "Not charging.")))
-        self.Output.print_temp("\tShunt high-side voltage: %.2f"
-                               % Controller().read_voltage(CHARGER_INPUT_SHUNT_HIGH_PIN))
-        self.Output.print_temp("\tShunt low-side voltage:  %.2f"
-                               % Controller().read_voltage(CHARGER_INPUT_SHUNT_LOW_PIN))
+        self.Output.print_temp("\tShunt (raw): %.2fV -> %.2fV"
+                               % (Controller().read_voltage(CHARGER_INPUT_SHUNT_HIGH_PIN),
+                                  Controller().read_voltage(CHARGER_INPUT_SHUNT_LOW_PIN)))
         self.Output.print_network_status()
         self.Output.print_rtc_and_sys_time("Time compare (periodic)")
 
@@ -1140,11 +1149,6 @@ class BatteryCharger(object):
         if not Controller().is_relay_off(self.charge_direction_relay):
             self.Output.print_err("BatteryCharger.disable_charge() failed to open charge-direction relay.")
             Controller().exit_program(ChargeControlError, "BatteryCharger.disable_charge() failed to open charge-direction relay.")
-
-    def get_charge_current(self):
-        voltage_diff = (  Controller().read_voltage(CHARGER_INPUT_SHUNT_HIGH_PIN)
-                        - Controller().read_voltage(CHARGER_INPUT_SHUNT_LOW_PIN) )
-        return voltage_diff * SHUNT_AMP_VOLTAGE_RATIO
 
     def is_charge_direction_fwd(self):
         return Controller().is_relay_off(self.charge_direction_relay)
