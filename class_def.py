@@ -440,6 +440,7 @@ class DataLogger(object):
         self._create_voltage_table() # idempotent
         self._create_charging_table() # idempotent
         self._create_signals_table() # idempotent
+        self.purge_old_data()
 
     def _create_SQLite_engine(self):
         return create_engine("sqlite:///%s" % DATA_LOG_PATH, echo=False)
@@ -510,6 +511,23 @@ class DataLogger(object):
                        );
                     """
         self._execute_sql(sql_stmt)
+
+    def purge_old_data(self, num_days=60):
+        sql_stmt = f"""SELECT Timestamp FROM {self.signals_table}
+                       ORDER BY Timestamp DESC
+                       LIMIT 1;
+                    """
+        latest_date = self._execute_sql(sql_stmt, query=True).index[0].date()
+        old_date_cutoff = latest_date - dt.timedelta(days=num_days)
+        old_date_cutoff_str = old_date_cutoff.strftime(DATETIME_FORMAT_SQL)
+
+        date_filter = "WHERE Timestamp < '%s'" % old_date_cutoff_str
+        for table in [self.voltage_table, self.charging_table, self.signals_table]:
+            sql_stmt = f"""DELETE
+                           FROM {table}
+                           {date_filter};
+                        """
+            self._execute_sql(sql_stmt)
 
     def _log_data(self, table_name, timestamp_now, values_list):
         # Convert True and False to TRUE and FALSE for SQLite to properly interpret as BOOL.
