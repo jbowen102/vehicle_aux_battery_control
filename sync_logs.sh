@@ -4,9 +4,10 @@ RPI_PROGRAM_ROOT="/home/${RPI_USER}/vehicle_aux_battery_control"
 
 # If running on RPi, push log BU to USB
 KILLSWITCH_DEV="USB-01"
-DEST_PATH_LOGS="/media/${RPI_USER}/${KILLSWITCH_DEV}/logs_BU"
-DEST_PATH_DATALOGGING="/media/${RPI_USER}/${KILLSWITCH_DEV}"
-if [ -d "/home/${RPI_USER}" ]; then
+KILLSWITCH_PATH="/media/${RPI_USER}/${KILLSWITCH_DEV}"
+DEST_PATH_LOGS="${KILLSWITCH_PATH}/logs_BU"
+DEST_PATH_DATALOGGING="${KILLSWITCH_PATH}"
+if [ -d "/home/${RPI_USER}" ] && [ -d "${KILLSWITCH_PATH}" ]; then
     sleep 15 # need delay after system startup for drive to mount.
     rsync -azi \
           ${RPI_PROGRAM_ROOT}/logs/ \
