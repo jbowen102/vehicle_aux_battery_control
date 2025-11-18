@@ -783,6 +783,16 @@ class Vehicle(object):
         #     output_str = "No charge current detected despite charging (reading %.2fA)." % self.get_charge_current()
         #     self.Output.print_err(output_str)
         #     raise ChargeControlError(output_str)
+
+        if self.BattCharger.is_charge_direction_fwd() and not np.isclose(self.get_main_voltage_raw(), self.BattCharger.get_charger_output_V(), atol=0.05):
+            output_str = "Charge-direction relay failed closed (charger output voltage =/= main voltage)."
+            self.Output.print_err(output_str)
+            raise ChargeControlError(output_str)
+        elif self.BattCharger.is_charge_direction_rev() and not np.isclose(self.get_aux_voltage_raw(), self.BattCharger.get_charger_output_V(), atol=0.05):
+            output_str = "Charge-direction relay failed open (charger output voltage =/= aux voltage)."
+            self.Output.print_err(output_str)
+            raise ChargeControlError(output_str)
+
         if self.is_key_off() and self.is_engine_running():
             output_str = "Inferred engine running but key OFF."
             self.Output.print_err(output_str)
@@ -976,12 +986,9 @@ class Vehicle(object):
         return voltage_diff * SHUNT_AMP_VOLTAGE_RATIO
 
     def get_charge_current(self):
-        if self.BattCharger.is_charging():
-            current_trailing_msmts = self.DataLogger.get_charging(self.Timer.get_time_now(), DB_SAMPLE_TRAILING_SEC, ["charge_current"])
-            current_est = np.median(current_trailing_msmts["charge_current"].to_list() + [self.get_charge_current_raw()])
-            return current_est
-        else:
-            return None
+        current_trailing_msmts = self.DataLogger.get_charging(self.Timer.get_time_now(), DB_SAMPLE_TRAILING_SEC, ["charge_current"])
+        current_est = np.median(current_trailing_msmts["charge_current"].to_list() + [self.get_charge_current_raw()])
+        return current_est
 
     def is_starter_batt_low(self, log=True):
         if not self.Timer.is_sys_voltage_stable():
@@ -1054,6 +1061,7 @@ class Vehicle(object):
             self.Output.print_info("Charging starter battery.")
         if post_delay:
             time.sleep(VOLTAGE_STABILIZATION_TIME_SEC)
+            self.check_wiring() # includes charge-direction check. Run at start of charging only.
 
     def charge_aux_batt(self, log=False, post_delay=False):
         if not self.is_starter_batt_charged():
@@ -1079,6 +1087,7 @@ class Vehicle(object):
             self.Output.print_info("Charging auxiliary battery.")
         if post_delay:
             time.sleep(VOLTAGE_STABILIZATION_TIME_SEC)
+            self.check_wiring() # includes charge-direction check. Run at start of charging only.
 
     def roll_indicator_light(self, led_fxn):
         """Increment brightness to produce glowing effect.
@@ -1108,7 +1117,7 @@ class Vehicle(object):
         engine_on_state = self.is_engine_running()
         charging_fla = (self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_fwd())
         charging_li = (self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_rev())
-        charge_current = self.get_charge_current()
+        charge_current = self.get_charge_current() if self.BattCharger.is_charging() else None
         ecu_w_signal_high = Controller().is_input_high(self.engine_on_detect_pin)
 
         self.Output.print_info("\tKey %s." % ("@ ACC/ON" if key_acc_powered else "OFF"))
@@ -1128,8 +1137,6 @@ class BatteryCharger(object):
     def __init__(self, Output, Timer):
         self.Output = Output
         self.Timer = Timer
-        self.charger_enable_relay = CHARGER_ENABLE_RELAY
-        self.charge_direction_relay = CHARGE_DIRECTION_RELAY
         self.set_up_adc_board()
 
     def set_up_adc_board(self):
@@ -1139,12 +1146,15 @@ class BatteryCharger(object):
     def get_adc_diff_V(self):
         return abs(AnalogIn(self.adc_board, ads1x15.Pin.A0, ads1x15.Pin.A1).voltage)
 
+    def get_charger_output_V(self):
+        return Controller().read_voltage(CHARGER_OUTPUT_V_PIN)
+
     def is_charging(self):
-        return Controller().is_relay_on(self.charger_enable_relay)
+        return Controller().is_relay_on(CHARGER_ENABLE_RELAY)
 
     def enable_charge(self):
         if not self.is_charging():
-            Controller().close_relay(self.charger_enable_relay)
+            Controller().close_relay(CHARGER_ENABLE_RELAY)
             time.sleep(0.5)
             self.Timer.set_charge_start_time()
         if not self.is_charging():
@@ -1153,32 +1163,32 @@ class BatteryCharger(object):
 
     def disable_charge(self):
         if self.is_charging():
-            Controller().open_relay(self.charger_enable_relay)
+            Controller().open_relay(CHARGER_ENABLE_RELAY)
             # Allow system voltage to settle
             time.sleep(0.5)
             self.Timer.set_charge_start_time()
             # Also release charge-direction relay to avoid wasting energy through its coil.
-            Controller().open_relay(self.charge_direction_relay)
+            Controller().open_relay(CHARGE_DIRECTION_RELAY)
             time.sleep(0.2)
 
         if self.is_charging():
             self.Output.print_err("BatteryCharger.disable_charge() failed to stop charging.")
             Controller().exit_program(ChargeControlError, "BatteryCharger.disable_charge() failed to stop charging.")
-        if not Controller().is_relay_off(self.charge_direction_relay):
+        if not Controller().is_relay_off(CHARGE_DIRECTION_RELAY):
             self.Output.print_err("BatteryCharger.disable_charge() failed to open charge-direction relay.")
             Controller().exit_program(ChargeControlError, "BatteryCharger.disable_charge() failed to open charge-direction relay.")
 
     def is_charge_direction_fwd(self):
-        return Controller().is_relay_off(self.charge_direction_relay)
+        return Controller().is_relay_off(CHARGE_DIRECTION_RELAY)
 
     def is_charge_direction_rev(self):
-        return Controller().is_relay_on(self.charge_direction_relay)
+        return Controller().is_relay_on(CHARGE_DIRECTION_RELAY)
 
     def set_charge_direction_fwd(self):
         # Charge starter battery with aux battery
         if self.is_charge_direction_rev():
             self.disable_charge()
-            Controller().open_relay(self.charge_direction_relay)
+            Controller().open_relay(CHARGE_DIRECTION_RELAY)
             time.sleep(0.5)
         if not self.is_charge_direction_fwd():
             self.Output.print_err("BatteryCharger.set_charge_direction_fwd() failed to set direction.")
@@ -1188,7 +1198,7 @@ class BatteryCharger(object):
         # Charge aux battery with alternator
         if self.is_charge_direction_fwd():
             self.disable_charge()
-            Controller().close_relay(self.charge_direction_relay)
+            Controller().close_relay(CHARGE_DIRECTION_RELAY)
             time.sleep(0.5)
         if not self.is_charge_direction_rev():
             self.Output.print_err("BatteryCharger.set_charge_direction_rev() failed to set direction.")
