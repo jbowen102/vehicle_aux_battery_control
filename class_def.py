@@ -17,8 +17,10 @@ HOSTNAME = platform.node()
 if HOSTNAME.lower().startswith("rpi"):
     # RPi-specific things that aren't needed (or usually installed) when running from laptop
     import automationhat as ah
-    from adafruit_pcf8523.pcf8523 import PCF8523
+    from adafruit_pcf8523.pcf8523 import PCF8523 # RTC breakout
+    from adafruit_ads1x15 import ADS1115, AnalogIn, ads1x15 # ADC breakout
     import board
+    I2C = board.I2C()
 
 from network_names import stored_ssid_mapping_dict     # local file
 from control_params import ALTERNATOR_OUTPUT_V_MIN, \
@@ -45,9 +47,9 @@ DATETIME_FORMAT_SQL = "%Y-%m-%d %H:%M:%S"
 SHUNT_AMP_VOLTAGE_RATIO = 20/0.075
 
 # Automation Hat pins
-CHARGER_INPUT_SHUNT_LOW_PIN = 0   # labeled 1 on board
-CHARGER_INPUT_SHUNT_HIGH_PIN = 1  # labeled 2 on board
-CHARGER_OUTPUT_PIN = 2            # labeled 3 on board
+CHARGER_OUTPUT_V_PIN = 0          # labeled 1 on board
+AUX_BATT_V_MONITORING_PIN = 1     # labeled 2 on board
+MAIN_BATT_V_MONITORING_PIN = 2    # labeled 3 on board
 
 ENGINE_ON_INPUT_PIN = 0           # labeled 1 on board
 KEY_ACC_INPUT_PIN = 1             # labeled 2 on board
@@ -191,7 +193,7 @@ class TimeKeeper(object):
         self.shutdown_timer_start = None
         self.charge_start_time = None
 
-        self.rtc = PCF8523(board.I2C())
+        self.rtc = PCF8523(I2C)
         self.rtc_time_valid = True # start w/ assumption that RTC up to date.
         self.sys_time_valid = False
 
@@ -477,8 +479,7 @@ class DataLogger(object):
                             charge_enable BOOL,
                             charge_dir BOOL,
                             charge_current FLOAT,
-                            shunt_V_in FLOAT,
-                            shunt_V_out FLOAT,
+                            shunt_V_diff FLOAT,
                             PRIMARY KEY (Timestamp)
                        );
                     """
@@ -741,8 +742,7 @@ class Vehicle(object):
                                      [self.BattCharger.is_charging(),
                                       self.BattCharger.is_charge_direction_fwd(),
                                       self.get_charge_current_raw(),
-                                      Controller().read_voltage(CHARGER_INPUT_SHUNT_HIGH_PIN),
-                                      Controller().read_voltage(CHARGER_INPUT_SHUNT_LOW_PIN)]
+                                      self.BattCharger.get_adc_diff_V()]
                                     )
         self.DataLogger.log_signals(self.Timer.get_time_now(),
                                     [self.is_enable_switch_closed(log=False),
@@ -833,19 +833,13 @@ class Vehicle(object):
         return enable_detect
 
     def get_main_voltage_raw(self, log=False):
-        if self.BattCharger.is_charge_direction_fwd():
-            voltage = Controller().read_voltage(CHARGER_OUTPUT_PIN)
-        else:
-            voltage = Controller().read_voltage(CHARGER_INPUT_SHUNT_HIGH_PIN)
+        voltage = Controller().read_voltage(MAIN_BATT_V_MONITORING_PIN)
         if log:
             self.Output.print_debug("Main voltage (raw): %.2fV" % voltage)
         return voltage
 
     def get_aux_voltage_raw(self, log=False):
-        if self.BattCharger.is_charge_direction_rev():
-            voltage = Controller().read_voltage(CHARGER_OUTPUT_PIN)
-        else:
-            voltage = Controller().read_voltage(CHARGER_INPUT_SHUNT_HIGH_PIN)
+        voltage = Controller().read_voltage(AUX_BATT_V_MONITORING_PIN)
         if log:
             self.Output.print_debug("Aux voltage (raw): %.2fV" % voltage)
         return voltage
@@ -978,14 +972,16 @@ class Vehicle(object):
         # return voltage_est
 
     def get_charge_current_raw(self):
-        voltage_diff = (  Controller().read_voltage(CHARGER_INPUT_SHUNT_HIGH_PIN)
-                        - Controller().read_voltage(CHARGER_INPUT_SHUNT_LOW_PIN) )
+        voltage_diff = self.BattCharger.get_adc_diff_V()
         return voltage_diff * SHUNT_AMP_VOLTAGE_RATIO
 
     def get_charge_current(self):
-        current_trailing_msmts = self.DataLogger.get_charging(self.Timer.get_time_now(), DB_SAMPLE_TRAILING_SEC, ["charge_current"])
-        current_est = np.median(current_trailing_msmts["charge_current"].to_list() + [self.get_charge_current_raw()])
-        return current_est
+        if self.BattCharger.is_charging():
+            current_trailing_msmts = self.DataLogger.get_charging(self.Timer.get_time_now(), DB_SAMPLE_TRAILING_SEC, ["charge_current"])
+            current_est = np.median(current_trailing_msmts["charge_current"].to_list() + [self.get_charge_current_raw()])
+            return current_est
+        else:
+            return None
 
     def is_starter_batt_low(self, log=True):
         if not self.Timer.is_sys_voltage_stable():
@@ -1112,7 +1108,7 @@ class Vehicle(object):
         engine_on_state = self.is_engine_running()
         charging_fla = (self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_fwd())
         charging_li = (self.BattCharger.is_charging() and self.BattCharger.is_charge_direction_rev())
-        # charge_current = self.get_charge_current() if self.BattCharger.is_charging() else None
+        charge_current = self.get_charge_current()
         ecu_w_signal_high = Controller().is_input_high(self.engine_on_detect_pin)
 
         self.Output.print_info("\tKey %s." % ("@ ACC/ON" if key_acc_powered else "OFF"))
@@ -1120,14 +1116,10 @@ class Vehicle(object):
                                % (("ON" if engine_on_state else "OFF"), ("HIGH" if ecu_w_signal_high else "LOW")))
         self.Output.print_info("\tMain (filtered/raw): %.2f/%.2f" % (self.get_main_voltage(), self.get_main_voltage_raw()))
         self.Output.print_info("\tAux  (filtered/raw): %.2f/%.2f" % (self.get_aux_voltage(), self.get_aux_voltage_raw()))
-        # self.Output.print_info("\t%s" % (      ("Charging -> FLA (%.2fA)." % charge_current) if charging_fla
-        #                                  else (("Charging -> Li (%.2fA)." % charge_current) if charging_li
-        self.Output.print_info("\t%s" % (      ("Charging -> FLA.") if charging_fla
-                                         else (("Charging -> Li.") if charging_li
+        self.Output.print_info("\t%s" % (      ("Charging -> FLA (%.2fA)." % charge_current) if charging_fla
+                                         else (("Charging -> Li (%.2fA)." % charge_current) if charging_li
                                          else  "Not charging.")))
-        self.Output.print_temp("\tShunt (raw): %.2fV -> %.2fV"
-                               % (Controller().read_voltage(CHARGER_INPUT_SHUNT_HIGH_PIN),
-                                  Controller().read_voltage(CHARGER_INPUT_SHUNT_LOW_PIN)))
+        self.Output.print_temp("\tShunt ΔV (raw): %.2fV" % self.BattCharger.get_adc_diff_V())
         self.Output.print_network_status()
         self.Output.print_rtc_and_sys_time("Time compare (periodic)")
 
@@ -1138,6 +1130,14 @@ class BatteryCharger(object):
         self.Timer = Timer
         self.charger_enable_relay = CHARGER_ENABLE_RELAY
         self.charge_direction_relay = CHARGE_DIRECTION_RELAY
+        self.set_up_adc_board()
+
+    def set_up_adc_board(self):
+        self.adc_board = ADS1115(I2C)
+        self.adc_board.gain = 16
+
+    def get_adc_diff_V(self):
+        return abs(AnalogIn(self.adc_board, ads1x15.Pin.A0, ads1x15.Pin.A1).voltage)
 
     def is_charging(self):
         return Controller().is_relay_on(self.charger_enable_relay)
