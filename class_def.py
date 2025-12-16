@@ -64,6 +64,9 @@ KEEPALIVE_RELAY = 2               # labeled 3 on board
 class ChargeControlError(Exception):
     pass
 
+class ChargeOverrideException(Exception):
+    pass
+
 class SystemVoltageError(Exception):
     pass
 
@@ -777,6 +780,16 @@ class Vehicle(object):
             output_str = "No aux voltage detected (reading %.2fV)." % self.get_aux_voltage_raw(log=False)
             self.Output.print_err(output_str)
             Controller().exit_program(SystemVoltageError, output_str)
+
+        if self.BattCharger.is_charging() and self.get_charge_current() < MIN_CHARGE_CURRENT_A:
+            output_str = "No charge current detected despite charging enabled (reading %.2fA)." % self.get_charge_current()
+            self.Output.print_err(output_str)
+            raise ChargeOverrideException(output_str)
+
+        if not self.BattCharger.is_charging() and self.get_charge_current() > MIN_CHARGE_CURRENT_A:
+            output_str = "Charge current detected despite charging disabled (reading %.2fA)." % self.get_charge_current()
+            self.Output.print_err(output_str)
+            raise ChargeOverrideException(output_str)
 
         # TODO - FIX
         # if self.BattCharger.is_charging() and self.get_charge_current() < MIN_CHARGE_CURRENT_A:
