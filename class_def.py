@@ -584,6 +584,20 @@ class DataLogger(object):
     def get_signals(self, timestamp_now, trailing_seconds, column_list=None):
         return self._get_data(self.signals_table, timestamp_now, trailing_seconds, column_list)
 
+    def get_dfs(self, date_str=None):
+        """Pass date string in "YYYY-MM-DD" format or leave blank to get data from today.
+        Returns a list of three dataframes representing the voltages, chargin, and signals tables,
+        with all entries for the given day.
+        """
+        if date_str is None:
+            # today
+            date_str = dt.datetime.now().date().isoformat()
+
+        day_end_time = dt.datetime.fromisoformat(date_str + "T235959")
+        return [self.get_voltages(day_end_time, 24*60*60 - 1),
+                self.get_charging(day_end_time, 24*60*60 - 1),
+                self.get_signals(day_end_time, 24*60*60 - 1)  ]
+
 
 class Controller(object):
     def __init__(self):
