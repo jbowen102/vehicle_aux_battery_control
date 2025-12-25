@@ -21,11 +21,11 @@ sudo chown "${USERNAME}" "${LOG_PATH}"
 
 # If USB unplugged from RPi, don't run program.
 KILLSWITCH_DEV="USB-01"
-KILLSWITCH_PATH="/media/${USERNAME}/${KILLSWITCH_DEV}/logs_BU"
-# Making it subdirectory prevents false-negative case when residual mount shows up in very early in boot.
+KILLSWITCH_PATH="/media/${USERNAME}/${KILLSWITCH_DEV}/control_params.py"
+# Must be a file that won't be created by auto-backup script on boot
 
 sleep 10 # need delay for drive to mount
-if [ -d "${KILLSWITCH_PATH}" ]; then
+if [ -e "${KILLSWITCH_PATH}" ]; then
     cd "${PROGRAM_ROOT}"
     while :
     do
