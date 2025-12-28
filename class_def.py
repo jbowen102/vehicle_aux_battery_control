@@ -87,12 +87,12 @@ class OutputHandler(object):
         self.time_valid = False
         self.Clock = TimeKeeper(self)
 
-        self._create_log_file()
         self._print_startup()
 
-        self.Clock.check_rtc(log=False)
-        self.Clock.check_rtc(log=True)
-        # Call second time w/ logging after first call establishes what time source to use for output/log.
+        self.Clock.check_rtc(adjust=True, log=True)
+        # Already called in TimeKeeper instantiation) w/ logging. First call
+        # establishes what time source to use for output/log.
+        # Call second time now, adjust if needed, and log findings.
 
     def assert_time_valid(self):
         self.time_valid = True
@@ -126,7 +126,6 @@ class OutputHandler(object):
         self.log_filepath = os.path.join(LOG_DIR, "%s.log" % datestamp)
         if not os.path.exists(self.log_filepath):
             # If multiple runs on same day, appends to existing file.
-            # If program runs over midnight, after-midnight events will be in previous day's logs.
             with open(self.log_filepath, "w") as fd:
                 pass
 
@@ -204,29 +203,56 @@ class TimeKeeper(object):
         self.shutdown_timer_start = None
         self.charge_start_time = None
 
-        self.rtc = PCF8523(I2C)
-        self.rtc_time_valid = True # start w/ assumption that RTC up to date.
         self.sys_time_valid = False
+        self.rtc = PCF8523(I2C)
+        self.rtc_time_valid = False
+        self.check_rtc(log=False) # May change rtc_time_valid attribute to True
+        # Will default to sys time if RTC check fails.
+        # Since there's no log file yet, caller (whatever's creating this class instance)
+        # should call check_rtc() method again w/ logging after time source established.
+        # Change RTC check to not take action (correcting RTC for instance) until
+        # time source established.
 
-    def check_rtc(self, log=True):
-        """Check RTC time plausibility. Will fall behind sys time if coin-cell
-        battery dies.
+    def check_rtc(self, adjust=False, log=True):
+        """Check RTC time plausibility. Assuming it will fall behind sys time if
+        coin-cell battery dies. Have also seen it jump way ahead for undetermined
+        reason.
+        If adjust is False, RTC will not be corrected, but sys time might update if NTP sync acquired.
         """
-        # if (time_now_sys - time_now_rtc) > dt.timedelta(seconds=lag_threshold):
+        if log:
+            self.Output.print_rtc_and_sys_time("Startup time compare")
+
         rtc_lag = self.get_rtc_lag()
+        # First see if it's behind system time, which should not happen under normal op.
         if rtc_lag > dt.timedelta(seconds=RTC_LAG_THRESHOLD_SEC):
             self.rtc_time_valid = False
             if log:
-                self.Output.print_rtc_and_sys_time("Startup time compare")
-                self.Output.print_err("RTC time behind sys time %ds, over %ds threshold. "
-                                      "Falling back to sys time."
-                                       % (rtc_lag, RTC_LAG_THRESHOLD_SEC))
+                self.Output.print_err(f"RTC time behind sys time {rtc_lag.total_seconds():.0f}s, "
+                                       "over {RTC_LAG_THRESHOLD_SEC}s threshold. "
+                                       "Falling back to sys time.")
             self.wait_for_ntp_update()
+
+        # Now check if RTC reading is implausibly ahead of system time (regardless of NTP sync).
+        # Have seen this happen once, and it was resolved by resetting RTC time.
+        elif -rtc_lag > dt.timedelta(weeks=6):
+            # Not expecting system to ever be shut off for >6 weeks.
+            self.rtc_time_valid = False
+            if adjust:
+                # Update it from system time, which requires
+                # waiting for network connection and NTP sync.
+                if log:
+                    self.Output.print_err("RTC time plausibility check failed.")
+                self.update_rtc(force=True, wait=True, log=log)
+                # Will succeed only if NTP-sync acquired already. Else, will fall back to sys time.
+                if log and not self.rtc_time_valid:
+                    self.Output.print_err("Falling back to sys time.")
+            elif log:
+                self.Output.print_err("RTC time plausibility check failed."
+                                      "Falling back to sys time.")
         else:
             self.rtc_time_valid = True
             self.Output.assert_time_valid()
             if log:
-                self.Output.print_rtc_and_sys_time("Startup time compare")
                 self.Output.print_info("Using RTC time.")
 
     def get_rtc_lag(self):
@@ -238,26 +264,29 @@ class TimeKeeper(object):
         # self.Output.print_debug("RTC time: %s" % self.get_time_now(string_format=DATETIME_FORMAT, source="rtc"))
         return (time_now_sys - time_now_rtc)
 
-    def update_rtc(self, wait=False, log=True):
+    def update_rtc(self, force=True, wait=False, log=True):
+        """force arg still requires NTP sync, but ignores how large of a lapse exists.
+        """
         if wait and not self.is_ntp_syncd(log=False):
             self.wait_for_ntp_update(log=True)
 
         if self.is_ntp_syncd(log=False):
-            if (   (self.get_rtc_lag() >= dt.timedelta(seconds=1))
-                or (self.get_rtc_lag() <= dt.timedelta(seconds=-1))):
-                # Don't bother updating if <1s difference.
+            if (force
+                or ( self.get_rtc_lag() > dt.timedelta(seconds=RTC_LAG_THRESHOLD_SEC))
+                or (-self.get_rtc_lag() > dt.timedelta(seconds=RTC_LAG_THRESHOLD_SEC))):
                 prev_time = self.get_time_now(source="rtc")
                 self.rtc.datetime = time.localtime(dt.datetime.now().timestamp())
                 new_time = self.get_time_now(source="rtc")
                 if log:
                     self.Output.print_debug("Updated RTC time (%s -> %s) from NTP-syncd sys time."
                                             % (prev_time, new_time))
+                # Now need to confirm setting is valid and set self.rtc_time_valid to True.
+                self.check_rtc(adjust=False, log=log)
             elif log:
-                self.Output.print_rtc_and_sys_time("No RTC update needed")
+                self.Output.print_rtc_and_sys_time("No RTC update needed.")
 
         elif log:
             self.Output.print_debug("Not updating RTC time since sys time not syncd with NTP.")
-        # Does not set self.rtc_time_valid to True. Will be False if check_rtc() failed.
 
     def get_time_now(self, string_format=None, source=None):
         """Returns date and time as datetime object or
@@ -342,12 +371,12 @@ class TimeKeeper(object):
     def get_seconds(self):
         """Returns seconds part of current time as int.
         """
-        return int(self.get_time_now().strftime("%-S"))
+        return self.get_time_now().second
 
     def get_minutes(self):
         """Returns minutes part of current time as int.
         """
-        return int(self.get_time_now().strftime("%-M"))
+        return self.get_time_now().minute
 
     def start_shutdown_timer(self, log=True):
         """If called while timer already running, timer restarts.
@@ -594,7 +623,7 @@ class DataLogger(object):
         return self._get_data(self.signals_table, timestamp_now, trailing_seconds, column_list)
 
     def get_dfs(self, date_str=None):
-        """Pass date string in "YYYY-MM-DD" format or leave blank to get data from today.
+        """Pass date string in "YYYY-MM-DD" format or leave blank to get data from today (based on sys time).
         Returns a list of three dataframes representing the voltages, chargin, and signals tables,
         with all entries for the given day.
         """
@@ -1214,7 +1243,7 @@ class Vehicle(object):
 
     def shut_down_controller(self, delay=5):
         self.DataLogger.run_backup(self.Timer.get_time_now(string_format=DATE_FORMAT))
-        self.Timer.update_rtc(wait=False, log=True) # Use system time to update RTC if sync'd w/ NTP.
+        self.Timer.update_rtc(force=True, wait=False, log=True) # Use system time to update RTC if sync'd w/ NTP.
         Controller().turn_off_all_ind_leds()
         self.Output.print_warn("Shutting down controller in %d seconds." % delay)
         Controller().shut_down(delay_s=delay)
