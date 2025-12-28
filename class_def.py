@@ -4,7 +4,8 @@ import pwd
 import time
 import datetime as dt
 import sys
-import subprocess
+import re
+import subprocess, shlex
 import ntplib
 from colorama import Style, Fore, Back
 
@@ -38,6 +39,10 @@ from control_params import ALTERNATOR_OUTPUT_V_MIN, \
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_DIR = os.path.join(SCRIPT_DIR, "logs")
 DATA_LOG_PATH = os.path.join(SCRIPT_DIR, "system_data_log.db")
+
+DATA_LOG_BU_NUM_TO_KEEP = 10
+DATA_LOG_BU_DIR = os.path.join(SCRIPT_DIR, "datalogging_BU")
+DATA_LOG_BU_REGEX = r"^system_data_log--2[01]\d{2}[01]\d[0-3]\d_auto\.db$"
 
 DATE_FORMAT = "%Y%m%d"
 TIME_FORMAT = "%H%M%S"
@@ -91,6 +96,9 @@ class OutputHandler(object):
 
     def assert_time_valid(self):
         self.time_valid = True
+
+    def is_time_valid(self):
+        return self.time_valid
 
     def _get_datestamp(self, valid_only=True):
         """Returns string.
@@ -435,9 +443,10 @@ class TimeKeeper(object):
 
 
 class DataLogger(object):
-    def __init__(self):
-        self.sql_engine = self._create_SQLite_engine()
+    def __init__(self, Output):
+        self.Output = Output
 
+        self.sql_engine = self._create_SQLite_engine()
         self.voltage_table = "voltages"
         self.charging_table = "charging"
         self.signals_table = "signals"
@@ -598,6 +607,77 @@ class DataLogger(object):
                 self.get_charging(day_end_time, 24*60*60 - 1),
                 self.get_signals(day_end_time, 24*60*60 - 1)  ]
 
+    def get_backup_list(self):
+        """Only includes ones that were auto-generated.
+        """
+        bu_dir_contents = os.listdir(DATA_LOG_BU_DIR)
+        datalog_backups = []
+        for filename in bu_dir_contents:
+            matches = re.findall(DATA_LOG_BU_REGEX, filename, flags=re.IGNORECASE)
+            if len(matches) == 1:
+                datalog_backups.append(matches[0])
+        datalog_backups.sort()
+        return datalog_backups
+
+    def run_backup(self, timestamp_now_str):
+        if not self.Output.is_time_valid():
+            # Don't run if no valid time is available. Won't be able to properly name backup target.
+            return
+
+        existing_datalog_backups = self.get_backup_list()
+        if len(existing_datalog_backups) > DATA_LOG_BU_NUM_TO_KEEP:
+            # If BU folder has more than specified number of existing backups to
+            # retain, remove oldest excess ones.
+            backups_to_keep = existing_datalog_backups[-DATA_LOG_BU_NUM_TO_KEEP:]
+            backups_to_remove = set(existing_datalog_backups).difference(set(backups_to_keep))
+            self.Output.print_info(f"Datalog BU: Removing {len(backups_to_remove)} excess datalog backup(s):")
+            for filename in backups_to_remove:
+                self.Output.print_info(f"\t\t{filename}")
+                os.remove(os.path.join(DATA_LOG_BU_DIR, filename))
+
+        # Read back in since list might have changed if files removed in above block.
+        existing_datalog_backups = self.get_backup_list()
+
+        today_bu_name = f"{os.path.splitext(os.path.basename(DATA_LOG_PATH))[0]}" \
+                        f"--{timestamp_now_str}_auto" \
+                        f"{os.path.splitext(os.path.basename(DATA_LOG_PATH))[1]}"
+                        # e.g., system_data_log--YYYYMMDD_auto.db
+        today_bu_target_path = os.path.join(DATA_LOG_BU_DIR, today_bu_name)
+
+        if os.path.exists(today_bu_target_path):
+            # If backup w/ today's date already exists, leave there and reuse that.
+            target_filename = today_bu_name
+        elif len(existing_datalog_backups) >= DATA_LOG_BU_NUM_TO_KEEP:
+            # If right number of dirs exists, and none is today's date,
+            # rename oldest dir to today's date.
+            backup_file_to_overwrite = existing_datalog_backups[0]
+            self.Output.print_info(f"Datalog BU: Overwriting {backup_file_to_overwrite}.")
+            target_filename = backup_file_to_overwrite
+        else:
+            # If fewer than target number of images exist, and none has today's date,
+            # sync to new file.
+            target_filename = today_bu_name
+
+        target_filename_temp = f"{os.path.splitext(today_bu_name)[0]}_TEMP{os.path.splitext(today_bu_name)[1]}"
+        target_file_path_temp = os.path.join(DATA_LOG_BU_DIR, target_filename_temp)
+
+        if os.path.exists(os.path.join(DATA_LOG_BU_DIR, target_filename)):
+            # Use TEMP designation until confirmed successful transfer
+            os.rename(os.path.join(DATA_LOG_BU_DIR, target_filename), target_file_path_temp)
+
+        rsync_options = "-azivh"
+        rsync_call = shlex.split(f"rsync {rsync_options} {DATA_LOG_PATH} {target_file_path_temp}") # returns a list
+
+        subprocess.run(shlex.split("tput setaf 63"))
+        result = subprocess.run(rsync_call)
+        subprocess.run(shlex.split("tput sgr0"))
+        if result.returncode != 0:
+            self.Output.print_info(f"Datalog BU: rsync command had nonzero exit status. {target_filename_temp} may be corrupt.")
+        else:
+            # rename file again after successful rsync
+            os.rename(target_file_path_temp, today_bu_target_path)
+            self.Output.print_info(f"Datalog BU: rsync command successful. Backed up to {today_bu_name}.")
+
 
 class Controller(object):
     def __init__(self):
@@ -733,7 +813,7 @@ class Vehicle(object):
     def __init__(self, Output, Timer):
         self.Output = Output
         self.Timer = Timer
-        self.DataLogger = DataLogger()
+        self.DataLogger = DataLogger(Output, self.Timer.get_time_now(string_format=DATE_FORMAT))
         self.BattCharger = BatteryCharger(self.Output, self.Timer)
 
         self.key_acc_detect_pin = KEY_ACC_INPUT_PIN
@@ -1133,6 +1213,7 @@ class Vehicle(object):
             self.Output.print_info("Stopped charging.")
 
     def shut_down_controller(self, delay=5):
+        self.DataLogger.run_backup(self.Timer.get_time_now(string_format=DATE_FORMAT))
         self.Timer.update_rtc(wait=False, log=True) # Use system time to update RTC if sync'd w/ NTP.
         Controller().turn_off_all_ind_leds()
         self.Output.print_warn("Shutting down controller in %d seconds." % delay)
