@@ -250,14 +250,15 @@ class TimeKeeper(object):
         reason.
         If adjust is False, RTC will not be corrected, but sys time might update if NTP sync acquired.
         """
-        rtc_lag = self.get_rtc_lag()
         if self.rtc is None:
             self.rtc_time_valid = False
             if log:
                 self.Output.print_warn("No RTC present.")
             self.wait_for_ntp_update(log=False)
+            return
 
-        elif rtc_lag > dt.timedelta(seconds=RTC_LAG_THRESHOLD_SEC):
+        rtc_lag = self.get_rtc_lag()
+        if rtc_lag > dt.timedelta(seconds=RTC_LAG_THRESHOLD_SEC):
             # See if it's behind system time, which should not happen under normal op.
             self.rtc_time_valid = False
             if log:
