@@ -703,6 +703,8 @@ class DataLogger(object):
         if not self.Output.is_time_valid():
             # Don't run if no valid time is available. Won't be able to properly name backup target.
             return
+        if not os.path.exists(DATA_LOG_BU_DIR):
+            os.mkdir(DATA_LOG_BU_DIR)
 
         existing_datalog_backups = self.get_backup_list()
         if len(existing_datalog_backups) > DATA_LOG_BU_NUM_TO_KEEP:
