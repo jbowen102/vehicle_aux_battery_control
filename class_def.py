@@ -22,6 +22,8 @@ if HOSTNAME.lower().startswith("rpi"):
     from adafruit_ads1x15 import ADS1115, AnalogIn, ads1x15 # ADC breakout
     import board
     I2C = board.I2C()
+else:
+    I2C = None
 
 from network_names import stored_ssid_mapping_dict     # local file
 from control_params import ALTERNATOR_OUTPUT_V_MIN, \
@@ -84,40 +86,37 @@ class SysTimeUpdateException(Exception):
 
 class OutputHandler(object):
     def __init__(self):
-        self.time_valid = False
         self.Clock = TimeKeeper(self)
+        self._log_startup()
 
-        self._print_startup()
+        # Call finish_clock_setup() immediately after instantiation.
 
+    def finish_clock_setup(self):
+        """Must be called immediately after instantiation.
+        """
+        self.print_rtc_and_sys_time("Startup time compare")
         self.Clock.check_rtc(adjust=True, log=True)
-        # Already called in TimeKeeper instantiation) w/ logging. First call
+        # Already called in TimeKeeper instantiation w/o logging. First call
         # establishes what time source to use for output/log.
-        # Call second time now, adjust if needed, and log findings.
-
-    def assert_time_valid(self):
-        self.time_valid = True
+        # Call second time now, adjusting if needed, and log findings.
+        self.Clock.is_ntp_syncd(log=True)
 
     def is_time_valid(self):
-        return self.time_valid
+        return self.Clock.is_time_valid(log=False)
 
     def _get_datestamp(self, valid_only=True):
         """Returns string.
         """
-        if self.Clock is None:
-            raise Exception("Tried to use _get_datestamp() but no Clock associated to OutputHandler.")
-
-        if valid_only and (not self.time_valid):
+        if valid_only and (not self.is_time_valid()):
             return "--------"
         else:
-            return self.Clock.get_time_now(DATE_FORMAT)
+            return self.Clock.get_time_now(string_format=DATE_FORMAT)
 
     def _get_timestamp(self):
-        if self.Clock is None:
-            raise Exception("Tried to use _get_timestamp() but no Clock associated to OutputHandler.")
-        if self.time_valid:
-            return self.Clock.get_time_now(DATETIME_FORMAT)
+        if self.is_time_valid():
+            return self.Clock.get_time_now(string_format=DATETIME_FORMAT)
         else:
-            return self._get_datestamp(valid_only=True) + "-" + self.Clock.get_time_now(TIME_FORMAT)
+            return self._get_datestamp(valid_only=True) + "-" + self.Clock.get_time_now(string_format=TIME_FORMAT)
             # Keep incorrect time displayed because relative differences still useful in log.
 
     def _create_log_file(self):
@@ -152,7 +151,7 @@ class OutputHandler(object):
             self._add_to_log_file(log_str)
             return None
 
-    def _print_startup(self):
+    def _log_startup(self):
         username = pwd.getpwuid(os.getuid()).pw_name
         # https://stackoverflow.com/a/2899055
         self._add_to_log_file("")
@@ -196,6 +195,8 @@ class OutputHandler(object):
 
 class TimeKeeper(object):
     def __init__(self, Output):
+        """Should always be instantiated by OutputHandler object.
+        """
         self.Output = Output
         self.state_change_delay_time = STATE_CHANGE_DELAY_SEC # default able to be overridden
 
@@ -204,14 +205,41 @@ class TimeKeeper(object):
         self.charge_start_time = None
 
         self.sys_time_valid = False
-        self.rtc = PCF8523(I2C)
+        self.is_ntp_syncd(restart_on_sync=False, log=False) # Can't log yet because Output object may not be  fully instantiated.
+
+        self.rtc = None
         self.rtc_time_valid = False
-        self.check_rtc(log=False) # May change rtc_time_valid attribute to True
+        self.set_up_rtc()
         # Will default to sys time if RTC check fails.
         # Since there's no log file yet, caller (whatever's creating this class instance)
         # should call check_rtc() method again w/ logging after time source established.
-        # Change RTC check to not take action (correcting RTC for instance) until
-        # time source established.
+
+    def is_time_valid(self, log=False):
+        if not self.rtc_time_valid:
+            pass
+            # Don't expect it will become valid after initial check during instantiation.
+        if not self.sys_time_valid:
+            self.is_ntp_syncd(log=log)
+            # This will change the sys_time_valid attribute if possible
+        return (self.sys_time_valid or self.rtc_time_valid)
+
+    def set_up_rtc(self):
+        """Will leave rtc attribute as None if no valid RTC present.
+        Cannot log in this method because Output not fully instantiated yet.
+        """
+        if I2C is None:
+            self.rtc_time_valid = False
+            self.rtc = None
+        else:
+            try:
+                self.rtc = PCF8523(I2C)
+            except ValueError:
+                self.rtc = None
+                self.rtc_time_valid = False
+            finally:
+                self.check_rtc(adjust=False, log=False)
+                # May change rtc_time_valid attribute to True.
+                # Can't log on this call because Output may not be fully instantiated yet.
 
     def check_rtc(self, adjust=False, log=True):
         """Check RTC time plausibility. Assuming it will fall behind sys time if
@@ -219,22 +247,25 @@ class TimeKeeper(object):
         reason.
         If adjust is False, RTC will not be corrected, but sys time might update if NTP sync acquired.
         """
-        if log:
-            self.Output.print_rtc_and_sys_time("Startup time compare")
-
         rtc_lag = self.get_rtc_lag()
-        # First see if it's behind system time, which should not happen under normal op.
-        if rtc_lag > dt.timedelta(seconds=RTC_LAG_THRESHOLD_SEC):
+        if self.rtc is None:
+            self.rtc_time_valid = False
+            if log:
+                self.Output.print_warn("No RTC present.")
+            self.wait_for_ntp_update(log=False)
+
+        elif rtc_lag > dt.timedelta(seconds=RTC_LAG_THRESHOLD_SEC):
+            # See if it's behind system time, which should not happen under normal op.
             self.rtc_time_valid = False
             if log:
                 self.Output.print_err(f"RTC time behind sys time {rtc_lag.total_seconds():.0f}s, "
                                        "over {RTC_LAG_THRESHOLD_SEC}s threshold. "
                                        "Falling back to sys time.")
-            self.wait_for_ntp_update()
+            self.wait_for_ntp_update(log=False)
 
-        # Now check if RTC reading is implausibly ahead of system time (regardless of NTP sync).
-        # Have seen this happen once, and it was resolved by resetting RTC time.
         elif -rtc_lag > dt.timedelta(weeks=6):
+            # Now check if RTC reading is implausibly ahead of system time (regardless of NTP sync).
+            # Have seen this happen once, and it was resolved by resetting RTC time.
             # Not expecting system to ever be shut off for >6 weeks.
             self.rtc_time_valid = False
             if adjust:
@@ -251,7 +282,6 @@ class TimeKeeper(object):
                                       "Falling back to sys time.")
         else:
             self.rtc_time_valid = True
-            self.Output.assert_time_valid()
             if log:
                 self.Output.print_info("Using RTC time.")
 
@@ -267,6 +297,10 @@ class TimeKeeper(object):
     def update_rtc(self, force=True, wait=False, restart_on_sync=False, log=True):
         """force arg still requires NTP sync, but ignores how large of a lapse exists.
         """
+        if log and self.rtc is None:
+            self.Output.print_warn("Called update_rtc, but no RTC present.")
+            return
+
         if wait and not self.is_ntp_syncd(log=False):
             self.wait_for_ntp_update(log=True)
 
@@ -280,12 +314,10 @@ class TimeKeeper(object):
                 if log:
                     self.Output.print_debug("Updated RTC time (%s -> %s) from NTP-syncd sys time."
                                             % (prev_time, new_time))
+                # Now need to confirm setting is valid and set self.rtc_time_valid to True.
+                self.check_rtc(adjust=False, log=log)
                 if restart_on_sync:
                     Controller().exit_program(SysTimeUpdateException, "RTC time updated. Restarting program.")
-                else:
-                    # Now need to confirm setting is valid and set self.rtc_time_valid to True.
-                    # If restarting program, this will run at startup.
-                    self.check_rtc(adjust=False, log=log)
             elif log:
                 self.Output.print_rtc_and_sys_time("No RTC update needed.")
 
@@ -298,7 +330,11 @@ class TimeKeeper(object):
         If source is set to "rtc" or "sys", will use that data source
         regardless of status.
         """
-        if source == "sys":
+        if source == "rtc" and self.rtc is None:
+            self.Output.print_warn("Called get_time_now w/ 'rtc' source, but no RTC present. Falling back to sys time.")
+            return self.get_time_now(string_format=string_format, source=None)
+            # callee should run else block below
+        elif source == "sys":
             datetime_now = dt.datetime.now()
         elif source == "rtc" or self.rtc_time_valid:
             datetime_now = dt.datetime.fromtimestamp(time.mktime(self.rtc.datetime))
@@ -333,15 +369,15 @@ class TimeKeeper(object):
                                 capture_output=True, text=True)
         updated = (result.stdout.strip() == "yes")
 
-        if updated and restart_on_sync and not self.sys_time_valid:
+        if updated and not self.sys_time_valid and restart_on_sync:
             # First time seeing NTP sync
+            self.sys_time_valid = True
             Controller().exit_program(SysTimeUpdateException, "NTP sync acquired. Restarting program.")
-            # Don't need to set sys_time_valid because program stopping.
         elif updated:
             self.sys_time_valid = True
             if log:
                 self.Output.print_rtc_and_sys_time("System date/time updated%s"
-                                    % (" (connected to %s)"
+                                                   % (" (connected to %s)"
                                         % (self.get_network_name(log=False)) if self.get_network_name(log=log) else ""))
         elif log:
             self.Output.print_warn("System date/time not yet updated since last power loss.")
@@ -356,10 +392,8 @@ class TimeKeeper(object):
         start_time = self.get_time_now()
         while not self._has_time_elapsed(start_time, NTP_WAIT_TIME_SEC):
             if self.is_ntp_syncd(log=False):
-                self.sys_time_valid = True
-                self.Output.assert_time_valid()
                 break
-        self.is_ntp_syncd(log=True) # Call again just for output
+        self.is_ntp_syncd(log=log) # Call again just for output
 
     def set_charge_start_time(self):
         self.charge_start_time = self.get_time_now()
@@ -477,6 +511,10 @@ class TimeKeeper(object):
 
 class DataLogger(object):
     def __init__(self, Output):
+        """Pass None to DataLogger explicitly to have it instantiate its own Output.
+        """
+        if Output is None:
+            Output = OutputHandler()
         self.Output = Output
 
         self.sql_engine = self._create_SQLite_engine()
