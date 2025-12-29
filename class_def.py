@@ -576,6 +576,9 @@ class DataLogger(object):
             self._execute_sql(sql_stmt)
 
     def _log_data(self, table_name, timestamp_now, values_list):
+        if not self.Output.is_time_valid():
+            # Don't log data if timestamp not valid.
+            return
         # Convert True and False to TRUE and FALSE for SQLite to properly interpret as BOOL.
         # Handle network-name string that needs extra quote wrap.
         values_str = ", ".join([str(x).upper() if not isinstance(x, str) else "'%s'" % x for x in values_list]).replace("NONE", "NULL")
@@ -864,6 +867,7 @@ class Vehicle(object):
         self.log_data()
 
     def log_data(self):
+        # DataLogger methods check that time is valid before committing data to db.
         self.DataLogger.log_voltages(self.Timer.get_time_now(),
                                      [self.get_main_voltage_raw(log=False),
                                       self.get_aux_voltage_raw(log=False)]
@@ -887,6 +891,9 @@ class Vehicle(object):
                                    )
 
     def check_datalogging(self):
+        if not self.Output.is_time_valid():
+            # Datalogger won't be logging
+            return
         time_now = self.Timer.get_time_now()
         threshold_s = 5 # Amount of time (in seconds) expected to always contain at least two log entries
         table_accessors = [self.DataLogger.get_voltages,
