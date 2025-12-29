@@ -37,6 +37,7 @@ def main(Output, Timer):
             time.sleep(1)
         if (Timer.get_minutes() % 5 == 0) and (Timer.get_seconds() == 0):
             # Every 5 minutes, print/log system status info.
+            Timer.update_rtc(force=False, wait=False, log=True)
             Timer.is_ntp_syncd(restart_on_sync=True, log=False)
             # Will restart program if NTP sync detected first here (need to call before Vehicle.output_status()).
             Car.output_status()

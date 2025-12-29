@@ -264,7 +264,7 @@ class TimeKeeper(object):
         # self.Output.print_debug("RTC time: %s" % self.get_time_now(string_format=DATETIME_FORMAT, source="rtc"))
         return (time_now_sys - time_now_rtc)
 
-    def update_rtc(self, force=True, wait=False, log=True):
+    def update_rtc(self, force=True, wait=False, restart_on_sync=False, log=True):
         """force arg still requires NTP sync, but ignores how large of a lapse exists.
         """
         if wait and not self.is_ntp_syncd(log=False):
@@ -280,8 +280,12 @@ class TimeKeeper(object):
                 if log:
                     self.Output.print_debug("Updated RTC time (%s -> %s) from NTP-syncd sys time."
                                             % (prev_time, new_time))
-                # Now need to confirm setting is valid and set self.rtc_time_valid to True.
-                self.check_rtc(adjust=False, log=log)
+                if restart_on_sync:
+                    Controller().exit_program(SysTimeUpdateException, "RTC time updated. Restarting program.")
+                else:
+                    # Now need to confirm setting is valid and set self.rtc_time_valid to True.
+                    # If restarting program, this will run at startup.
+                    self.check_rtc(adjust=False, log=log)
             elif log:
                 self.Output.print_rtc_and_sys_time("No RTC update needed.")
 
