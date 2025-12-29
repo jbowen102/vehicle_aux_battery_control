@@ -100,7 +100,8 @@ class OutputHandler(object):
         # Already called in TimeKeeper instantiation w/o logging. First call
         # establishes what time source to use for output/log.
         # Call second time now, adjusting if needed, and log findings.
-        self.Clock.is_ntp_syncd(log=True)
+
+        self.Clock.wait_for_ntp_update(log=True)
 
     def is_time_valid(self):
         return self.Clock.is_time_valid(log=False)
@@ -892,7 +893,7 @@ class Vehicle(object):
     def __init__(self, Output, Timer):
         self.Output = Output
         self.Timer = Timer
-        self.DataLogger = DataLogger(Output, self.Timer.get_time_now(string_format=DATE_FORMAT))
+        self.DataLogger = DataLogger(Output)
         self.BattCharger = BatteryCharger(self.Output, self.Timer)
 
         self.key_acc_detect_pin = KEY_ACC_INPUT_PIN

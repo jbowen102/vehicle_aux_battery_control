@@ -14,7 +14,6 @@ def main(Output, Timer):
     for x in range(3):
         Car.log_data()
         time.sleep(1.1)
-    Timer.wait_for_ntp_update(log=True)
 
     key_acc_powered   = Car.is_acc_powered()
     engine_on_state   = Car.is_engine_running()
@@ -163,6 +162,7 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, Controller().sigterm_handler) # method that turns off LEDs and relays and exits Python script
 
     Output = OutputHandler()
+    Output.finish_clock_setup()
     Timer = Output.Clock     # TimeKeeper object created in OutputHandler.__init__()
 
     try:
