@@ -606,10 +606,13 @@ class DataLogger(object):
                        ORDER BY Timestamp DESC
                        LIMIT 1;
                     """
-        latest_date = self._execute_sql(sql_stmt, query=True).index[0].date()
+        query_return = self._execute_sql(sql_stmt, query=True)
+        if query_return.empty:
+            return
+
+        latest_date = query_return.index[0].date()
         old_date_cutoff = latest_date - dt.timedelta(days=num_days)
         old_date_cutoff_str = old_date_cutoff.strftime(DATETIME_FORMAT_SQL)
-
         date_filter = "WHERE Timestamp < '%s'" % old_date_cutoff_str
         for table in [self.voltage_table, self.charging_table, self.signals_table]:
             sql_stmt = f"""DELETE
