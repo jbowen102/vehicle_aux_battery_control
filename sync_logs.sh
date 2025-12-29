@@ -15,11 +15,14 @@ if [ -d "/home/${RPI_USER}" ] && [ -e "${KILLSWITCH_PATH}" ]; then
           ${RPI_PROGRAM_ROOT}/logs/ \
           ${DEST_PATH_LOGS}/
 
-    rsync -azi --progress \
+    rsync -azi \
+          --progress \
           ${RPI_PROGRAM_ROOT}/system_data_log.db \
           ${DEST_PATH_DATA}/
 
-    rsync -azi --progress \
+    rsync -azi \
+          --progress \
+          --delete-before \
           ${RPI_PROGRAM_ROOT}/datalogging_BU/ \
           ${DEST_PATH_DATA_BU}/
 fi
@@ -46,6 +49,7 @@ if [ -d "/home/${LAPTOP_USER}" ]; then
 
     rsync -azivh \
           --progress \
+          --delete-before \
           -e "ssh -i /home/${LAPTOP_USER}/.ssh/id_ed25519" \
           ${RPI_USER}@${REMOTE_HOSTNAME}:${RPI_PROGRAM_ROOT}/datalogging_BU/ \
           ${DEST_PATH_DATA_BU}/

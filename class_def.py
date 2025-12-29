@@ -705,10 +705,10 @@ class DataLogger(object):
         existing_datalog_backups = self.get_backup_list()
         if len(existing_datalog_backups) > DATA_LOG_BU_NUM_TO_KEEP:
             # If BU folder has more than specified number of existing backups to
-            # retain, remove oldest excess ones.
+            # retain, remove oldest extraneous ones.
             backups_to_keep = existing_datalog_backups[-DATA_LOG_BU_NUM_TO_KEEP:]
             backups_to_remove = set(existing_datalog_backups).difference(set(backups_to_keep))
-            self.Output.print_info(f"Datalog BU: Removing {len(backups_to_remove)} excess datalog backup(s):")
+            self.Output.print_info(f"Datalog BU: Removing {len(backups_to_remove)} extraneous datalog backup(s):")
             for filename in backups_to_remove:
                 self.Output.print_info(f"\t\t{filename}")
                 os.remove(os.path.join(DATA_LOG_BU_DIR, filename))
