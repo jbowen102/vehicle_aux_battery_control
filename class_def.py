@@ -640,8 +640,9 @@ class DataLogger(object):
             cols = "*"
 
         timestamp_trail = timestamp_now - dt.timedelta(seconds=trailing_seconds)
+        timestamp_now_str = timestamp_now.strftime(DATETIME_FORMAT_SQL)
         timestamp_trail_str = timestamp_trail.strftime(DATETIME_FORMAT_SQL)
-        time_filter = "WHERE Timestamp >= '%s'" % timestamp_trail_str
+        time_filter = "WHERE Timestamp >= '%s' AND Timestamp <= '%s'" % (timestamp_trail_str, timestamp_now_str)
 
         sql_stmt = f"""SELECT {cols}
                        FROM {table_name}
