@@ -85,8 +85,9 @@ class SysTimeUpdateException(Exception):
 
 
 class OutputHandler(object):
-    def __init__(self):
+    def __init__(self, use_log_file=True):
         self.Clock = TimeKeeper(self)
+        self.logging = use_log_file
         self._log_startup()
 
         # Call finish_clock_setup() immediately after instantiation.
@@ -129,6 +130,8 @@ class OutputHandler(object):
                 pass
 
     def _add_to_log_file(self, print_str):
+        if not self.logging:
+            return
         self._create_log_file() # Ensures that if date changes while program running,
                                 # new log entries are written to next day's log.
         with open(self.log_filepath, "a") as log_file:
@@ -511,10 +514,10 @@ class TimeKeeper(object):
 
 class DataLogger(object):
     def __init__(self, Output):
-        """Pass None to DataLogger explicitly to have it instantiate its own Output.
+        """Pass None to DataLogger explicitly to have it instantiate its own Output and not use a log file.
         """
         if Output is None:
-            Output = OutputHandler()
+            Output = OutputHandler(use_log_file=False)
         self.Output = Output
 
         self.sql_engine = self._create_SQLite_engine()
