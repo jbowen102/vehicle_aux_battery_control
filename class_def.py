@@ -895,9 +895,9 @@ class Controller(object):
 
 
 class Vehicle(object):
-    def __init__(self, Output, Timer):
+    def __init__(self, Output):
         self.Output = Output
-        self.Timer = Timer
+        self.Timer = self.Output.Clock
         self.DataLogger = DataLogger(Output)
         self.BattCharger = BatteryCharger(self.Output, self.Timer)
 

@@ -6,9 +6,10 @@ import traceback
 
 from class_def import Vehicle, Controller, TimeKeeper, OutputHandler, SysTimeUpdateException
 
-def main(Output, Timer):
+def main(Output):
     time.sleep(4)                # Give time for system to stabilize.
     Car = Vehicle(Output, Timer)
+    Timer = Output.Clock         # TimeKeeper object created in OutputHandler.__init__()
 
     # Log initial data to use for proper state inference, voltage measurements, etc.
     for x in range(3):
@@ -163,10 +164,9 @@ if __name__ == "__main__":
 
     Output = OutputHandler()
     Output.finish_clock_setup()
-    Timer = Output.Clock     # TimeKeeper object created in OutputHandler.__init__()
 
     try:
-        main(Output, Timer)
+        main(Output)
     except TimeoutError:
         # Thrown by AutomationHAT - "Timed out waiting for conversion."
         # Seems to be caused by system acquiring NTP sync, jumping system time, and some mechanics in AutomationHAT code infer an op timed out.
